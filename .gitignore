@@ -1,0 +1,22 @@
+# Build artifacts
+*.o
+*.exe
+*.dll
+*.a
+*.lib
+*.obj
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.sln.docstates
+*.vcxproj.user
+
+# Debug/Test output
+output.txt
+error.txt
+
+# OS files
+.DS_Store
+Thumbs.db
