@@ -26,10 +26,30 @@ jobs:
           cd ~/NxNandManager/NxNandManager
           
           # Download and extract Dokan runtime DLL
-          mkdir -p virtual_fs/dokan/x64
+          echo "Downloading Dokan library..."
           curl -L -o /tmp/dokan.zip "https://github.com/dokan-dev/dokany/releases/download/v2.1.0.1000/DokanSetup.exe"
-          7z x -o/tmp/dokan /tmp/dokan.zip dokan1.dll -r
-          find /tmp/dokan -name "dokan1.dll" -exec cp {} virtual_fs/dokan/x64/ \;
+          
+          # List contents to verify download
+          echo "Archive contents:"
+          7z l /tmp/dokan.zip || { echo "Failed to read archive"; exit 1; }
+          
+          # Extract dokan1.dll
+          mkdir -p virtual_fs/dokan/x64
+          7z x -o/tmp/dokan /tmp/dokan.zip -r || { echo "Failed to extract archive"; exit 1; }
+          
+          # Find and copy dokan1.dll
+          echo "Searching for dokan1.dll..."
+          find /tmp/dokan -name "dokan1.dll" -type f
+          find /tmp/dokan -name "dokan1.dll" -type f -exec cp {} virtual_fs/dokan/x64/ \;
+          
+          # Verify the DLL was extracted
+          if ! [ -f virtual_fs/dokan/x64/dokan1.dll ]; then
+            echo "Error: Failed to extract dokan1.dll from Dokan archive"
+            echo "Listing /tmp/dokan contents:"
+            ls -R /tmp/dokan || echo "Directory does not exist"
+            exit 1
+          fi
+          echo "Successfully extracted dokan1.dll"
           
           # Build the project
           make -j"$(nproc)"
@@ -37,11 +57,7 @@ jobs:
           # Package artifacts
           mkdir -p $GITHUB_WORKSPACE/bin
           cp NxNandManager.exe $GITHUB_WORKSPACE/bin
-          if [ -f virtual_fs/dokan/x64/dokan1.dll ]; then
-            cp virtual_fs/dokan/x64/dokan1.dll $GITHUB_WORKSPACE/bin
-          else
-            echo "Warning: dokan1.dll not found, artifact may not run"
-          fi
+          cp virtual_fs/dokan/x64/dokan1.dll $GITHUB_WORKSPACE/bin
       - uses: actions/upload-artifact@v4
         with:
           name: NxNandManager
