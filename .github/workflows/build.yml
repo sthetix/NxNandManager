@@ -17,17 +17,16 @@ jobs:
           install: >-
             base-devel
             mingw-w64-x86_64-toolchain
-            mingw64/mingw-w64-x86_64-qt5-static
+            mingw-w64-x86_64-openssl
       - name: build
         shell: msys2 {0}
         run: |
           ln -s $(pwd) ~/NxNandManager
-          cd ~/NxNandManager/NxNandManager/gui
-          /mingw64/qt5-static/bin/qmake.exe NxNandManager.pro 'CONFIG += STATIC ARCH64'
+          cd ~/NxNandManager/NxNandManager
           make -j"$(nproc)"
           mkdir -p $GITHUB_WORKSPACE/bin
-          cp release/NxNandManager.exe $GITHUB_WORKSPACE/bin
-          cp ../virtual_fs/dokan/x64/dokan1.dll $GITHUB_WORKSPACE/bin
+          cp NxNandManager.exe $GITHUB_WORKSPACE/bin
+          cp virtual_fs/dokan/x64/dokan1.dll $GITHUB_WORKSPACE/bin
       - uses: actions/upload-artifact@v4
         with:
           name: NxNandManager
