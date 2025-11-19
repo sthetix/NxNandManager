@@ -1,10 +1,10 @@
-CC       = gcc
-CXX      = g++
+CC       = x86_64-w64-mingw32-gcc
+CXX      = x86_64-w64-mingw32-g++
 CXXFLAGS=-std=c++11 -fexceptions -DUNICODE -D_UNICODE -fPIC -fpermissive 
 CFLAGS= -fPIC -Wno-enum-conversion -O3
 EXEC_NAME=NxNandManager.exe
 INCLUDES=-Ivirtual_fs/dokan/include 
-LIBS=-static -lcrypto -lwsock32 -lws2_32 -Lvirtual_fs/dokan/x86/lib -ldokan1
+LIBS=-static -lcrypto -lwsock32 -lws2_32 -lcrypt32 -Lvirtual_fs/dokan/x64/lib -ldokan1
 
 # Sources of external libraries
 SRC_ZLIB  = $(wildcard lib/ZipLib/extlibs/zlib/*.c)
@@ -15,14 +15,14 @@ SRC_FATFS = $(wildcard lib/fatfs/*.cpp)
 # sources
 SRC = \
 	$(wildcard *.cpp)        \
-	$(wildcard *.rc)        \
 	$(wildcard res/*.cpp)        \
 	$(wildcard virtual_fs/*.cpp)        \
 	$(wildcard lib/ZipLib/*.cpp)        \
 	$(wildcard lib/ZipLib/detail/*.cpp)
 
-RCOBJ = $(patsubst %.rc,%.rc.o, $(wildcard gui/*.rc))
-OBJS = $(RCOBJ) \
+# Skip RC files for CLI-only build
+#RCOBJ = $(patsubst %.rc,%.rc.o, $(wildcard gui/*.rc))
+OBJS = \
 	$(SRC:.cpp=.o)     \
 	$(SRC_ZLIB:.c=.o)  \
 	$(SRC_LZMA:.c=.o)  \
@@ -47,8 +47,9 @@ clean :
 $(EXEC_NAME): $(OBJS)
 	$(CXX) -o $@ $^ $(LIBS) 
 
-$(RCOBJ) : %.rc.o : %.rc
-	windres $^ -o $@
+# Skip windres for CLI-only build
+#$(RCOBJ) : %.rc.o : %.rc
+#	windres $^ -o $@
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@

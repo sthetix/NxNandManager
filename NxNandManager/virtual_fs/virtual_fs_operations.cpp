@@ -376,9 +376,12 @@ static void DOKAN_CALLBACK virtual_fs_cleanup(LPCWSTR filename,
       else dbg_printf("Delete on close, NO CONTEXT\n");
       filenodes->remove(filename_str);
   }
+  // Close the file handle before cleanup, but don't delete the NxFile object yet
+  // CloseFile will be called after Cleanup and will handle deletion
   if (hasContext) {
-      delete GET_FILE_INSTANCE;
-      dokanfileinfo->Context = 0;
+      dbg_printf("Cleanup has context, close nxFile handle\n");
+      auto nxFile = GET_FILE_INSTANCE;
+      nxFile->close();
   }
 }
 
@@ -387,12 +390,13 @@ static void DOKAN_CALLBACK virtual_fs_closeFile(LPCWSTR filename,
 
   auto filename_str = std::wstring(filename);
   dbg_wprintf(L"CloseFile: %ls\n", filename_str.c_str());
-  // Here we should release all resources from the createfile context if we had.
+  // CloseFile is called after Cleanup - here we delete the NxFile object
   if (dokanfileinfo->Context)
   {
-      dbg_printf("ClodeFile has context, close nxFile\n");
+      dbg_printf("CloseFile has context, delete nxFile\n");
       auto nxFile = GET_FILE_INSTANCE;
-      nxFile->close();
+      delete nxFile;
+      dokanfileinfo->Context = 0;
   }
 }
 
