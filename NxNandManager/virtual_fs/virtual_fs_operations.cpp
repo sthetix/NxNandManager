@@ -362,7 +362,9 @@ static void DOKAN_CALLBACK virtual_fs_cleanup(LPCWSTR filename,
   auto filenodes = GET_FS_INSTANCE;
   auto nxp = filenodes->nx_part;
   auto filename_str = std::wstring(filename);
-  dbg_wprintf(L"Cleanup: %ls\n", filename_str.c_str());
+  dbg_wprintf(L"Cleanup: %ls ctx=%p, isDir=%d, deleteOnClose=%d\n",
+              filename_str.c_str(), (void*)dokanfileinfo->Context,
+              dokanfileinfo->IsDirectory, dokanfileinfo->DeleteOnClose);
   bool hasContext = dokanfileinfo->Context;
   if (dokanfileinfo->DeleteOnClose) {
       if (dokanfileinfo->IsDirectory) {
@@ -389,12 +391,13 @@ static void DOKAN_CALLBACK virtual_fs_closeFile(LPCWSTR filename,
                                            PDOKAN_FILE_INFO dokanfileinfo) {
 
   auto filename_str = std::wstring(filename);
-  dbg_wprintf(L"CloseFile: %ls\n", filename_str.c_str());
+  dbg_wprintf(L"CloseFile: %ls ctx=%p\n",
+              filename_str.c_str(), (void*)dokanfileinfo->Context);
   // CloseFile is called after Cleanup - here we delete the NxFile object
   if (dokanfileinfo->Context)
   {
-      dbg_printf("CloseFile has context, delete nxFile\n");
       auto nxFile = GET_FILE_INSTANCE;
+      dbg_printf("CloseFile has context, delete nxFile [%p]\n", nxFile);
       delete nxFile;
       dokanfileinfo->Context = 0;
   }
@@ -407,6 +410,8 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_readfile(LPCWSTR filename, LPVOID buff
                                               PDOKAN_FILE_INFO dokanfileinfo) {
     auto filenodes = GET_FS_INSTANCE;
     auto filename_str = std::wstring(filename);
+    dbg_wprintf(L"ReadFile: %ls offset=0x%llx, length=0x%x, ctx=%p\n",
+                filename_str.c_str(), offset, bufferlength, (void*)dokanfileinfo->Context);
 
     // Alternate stream
     if (filename_str.find_first_of(L":") != std::wstring::npos)
@@ -419,7 +424,11 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_readfile(LPCWSTR filename, LPVOID buff
         return STATUS_OBJECT_NAME_NOT_FOUND;
 
     auto nxFile = GET_FILE_INSTANCE;
-    return nxFile->read((u64)offset, (void*)buffer, bufferlength, (u32*)readlength);
+    auto result = nxFile->read((u64)offset, (void*)buffer, bufferlength, (u32*)readlength);
+    if (result != STATUS_SUCCESS)
+        dbg_wprintf(L"ReadFile: %ls FAILED - result=0x%x, read=%d bytes\n",
+                    filename_str.c_str(), result, readlength ? *readlength : 0);
+    return result;
 }
 
 static NTSTATUS DOKAN_CALLBACK virtual_fs_writefile(LPCWSTR filename, LPCVOID buffer,

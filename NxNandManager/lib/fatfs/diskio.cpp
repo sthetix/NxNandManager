@@ -116,13 +116,21 @@ DRESULT disk_read (
     NXFS *fs = get_nxfs_by_ix(pdrv);
     if (fs == nullptr || fs->nx_partition == nullptr)
         return RES_PARERR;
+    
+    dbg_printf("disk_read: pdrv=%d, sector=0x%x, count=%d, handle=%p\n",
+               pdrv, (u32)sector, count, fs->nx_handle);
 
     if (fs->nx_partition->isEncryptedPartition())
         fs->nx_handle->setCrypto(DECRYPT);
 
-    if (!fs->nx_handle->read((u32)sector, (void*)buff, nullptr, count * NX_BLOCKSIZE))
+    if (!fs->nx_handle->read((u32)sector, (void*)buff, nullptr, count * NX_BLOCKSIZE)) {
+        dbg_printf("disk_read: FAILED - pdrv=%d, sector=0x%x, count=%d\n",
+                   pdrv, (u32)sector, count);
         return RES_PARERR;
+    }
 
+    dbg_printf("disk_read: SUCCESS - pdrv=%d, sector=0x%x, count=%d\n",
+               pdrv, (u32)sector, count);
     return RES_OK;
 }
 

@@ -515,6 +515,8 @@ bool NxHandle::read(void *buffer, DWORD* br, DWORD length)
     if(br) *br = 0;
 
     auto init_pointer = virtual_currentPtr();
+    dbg_printf("NxHandle::read() - offset=0x%llx, length=0x%x, virt_ptr=0x%llx, real_ptr=0x%llx [this=%p]\n",
+               lp_CurrentPointer.QuadPart, length, init_pointer, real_currentPtr(), this);
 
     // Set default buffer size 
     if (!length) 
@@ -531,7 +533,7 @@ bool NxHandle::read(void *buffer, DWORD* br, DWORD length)
     // Read data to buffer
     DWORD bytesToReadTotal = length;
     DWORD bytesCount = 0;
-    //std::lock_guard<std::mutex> lock(_read_write_mutex);
+    std::lock_guard<std::mutex> lock(_read_write_mutex);
     while(bytesCount < bytesToReadTotal)
     {
         DWORD bytesToRead = bytesToReadTotal - bytesCount;
@@ -548,7 +550,8 @@ bool NxHandle::read(void *buffer, DWORD* br, DWORD length)
         u8* u8_buff = reinterpret_cast<u8*>(buffer);
         if (!ReadFile(m_h, &u8_buff[bytesCount], bytesToRead, &bytesRead, nullptr))
         {
-            dbg_printf("NxHandle::read ReadFile error %s\n", GetLastErrorAsString().c_str());
+            dbg_printf("NxHandle::read ReadFile FAILED - offset=0x%llx, bytes_to_read=0x%x, error=%s [this=%p]\n",
+                       lp_CurrentPointer.QuadPart, bytesToRead, GetLastErrorAsString().c_str(), this);
             return false;
         }
         if (!bytesRead)
@@ -570,6 +573,8 @@ bool NxHandle::read(void *buffer, DWORD* br, DWORD length)
     if (br)
         *br = bytesCount;
 
+    dbg_printf("NxHandle::read() - SUCCESS: read 0x%x bytes, new_ptr=0x%llx [this=%p]\n",
+               bytesCount, lp_CurrentPointer.QuadPart, this);
     return true;
 }
 
@@ -607,7 +612,7 @@ bool NxHandle::write(void *in_buffer, DWORD* bw, DWORD length)
         length -= lp_CurrentPointer.QuadPart + length - m_off_end - 1;
 
     bool encrypt = m_crypto == ENCRYPT;
-    //std::lock_guard<std::mutex> lock(_read_write_mutex);
+    std::lock_guard<std::mutex> lock(_read_write_mutex);
     void* buffer = encrypt ? malloc(length) : in_buffer;
     if (encrypt == ENCRYPT) {
         // We want to write encrypted data but we don't want input buffer to be encrypted !!!
