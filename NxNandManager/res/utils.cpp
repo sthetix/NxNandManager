@@ -2,9 +2,12 @@
 using namespace std;
 
 static FILE* debug_log_file = nullptr;
+static std::mutex* debug_log_mutex = nullptr;
 
 void init_debug_log() {
     if (!debug_log_file) {
+        if (!debug_log_mutex)
+            debug_log_mutex = new std::mutex();
         debug_log_file = fopen("nxnm_debug.log", "w");
         if (debug_log_file) {
             fprintf(debug_log_file, "NxNandManager Debug Log\n");
@@ -18,6 +21,10 @@ void close_debug_log() {
     if (debug_log_file) {
         fclose(debug_log_file);
         debug_log_file = nullptr;
+    }
+    if (debug_log_mutex) {
+        delete debug_log_mutex;
+        debug_log_mutex = nullptr;
     }
 }
 
@@ -584,8 +591,10 @@ void dbg_printf (const char *format, ...)
 	vprintf(format, args);
 	va_end( args );
 
-	// Write to log file
-	if (debug_log_file) {
+	// Write to log file with thread safety
+	if (debug_log_file && debug_log_mutex) {
+		std::lock_guard<std::mutex> lock(*debug_log_mutex);
+		fprintf(debug_log_file, "[%04x] ", GetCurrentThreadId());
 		va_list args2;
 		va_start( args2, format );
 		vfprintf(debug_log_file, format, args2);
@@ -635,8 +644,10 @@ void dbg_wprintf (const wchar_t *format, ...)
         vwprintf(format, args);
         va_end( args );
         
-        // Write to log file
-        if (debug_log_file) {
+        // Write to log file with thread safety
+        if (debug_log_file && debug_log_mutex) {
+            std::lock_guard<std::mutex> lock(*debug_log_mutex);
+            fprintf(debug_log_file, "[%04x] ", GetCurrentThreadId());
             va_start( args, format );
             vfwprintf(debug_log_file, format, args);
             va_end( args );

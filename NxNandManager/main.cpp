@@ -19,6 +19,16 @@
 #include "res/utils.h"
 #include "virtual_fs/virtual_fs.h"
 #include <fcntl.h>
+#include <signal.h>
+
+void crash_handler(int sig) {
+    dbg_printf("\n\n=== CRASH DETECTED ===\n");
+    dbg_printf("Signal: %d\n", sig);
+    dbg_printf("This may be due to threading issues or memory corruption\n");
+    close_debug_log();
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
 
 BOOL BYPASS_MD5SUM = FALSE;
 bool isdebug = TRUE;
@@ -326,6 +336,10 @@ int main(int argc, char *argv[])
     const char DOKAN_ARGUMENT[] = "--install_dokan";
     const char STDREDIR_ARGUMENT[] = "-stdout_redirect";
 
+    // Install crash handlers
+    signal(SIGSEGV, crash_handler);
+    signal(SIGABRT, crash_handler);
+    signal(SIGILL, crash_handler);
 
     for (int i = 1; i < argc; i++)
     {
