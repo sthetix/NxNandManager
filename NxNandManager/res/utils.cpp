@@ -4,7 +4,7 @@ using namespace std;
 static FILE* debug_log_file = nullptr;
 
 void init_debug_log() {
-    if (!debug_log_file && isdebug) {
+    if (!debug_log_file) {
         debug_log_file = fopen("nxnm_debug.log", "w");
         if (debug_log_file) {
             fprintf(debug_log_file, "NxNandManager Debug Log\n");

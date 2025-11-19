@@ -21,7 +21,7 @@
 #include <fcntl.h>
 
 BOOL BYPASS_MD5SUM = FALSE;
-bool isdebug = FALSE;
+bool isdebug = TRUE;
 bool isGUI = FALSE;
 
 BOOL FORCE = FALSE;
