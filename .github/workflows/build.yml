@@ -27,7 +27,7 @@ jobs:
           
           # Download and extract Dokan runtime DLL
           mkdir -p virtual_fs/dokan/x64
-          curl -L -o /tmp/dokan.zip "https://github.com/dokan-dev/dokany/releases/download/v2.1.0.1000/Dokan_x64.exe"
+          curl -L -o /tmp/dokan.zip "https://github.com/dokan-dev/dokany/releases/download/v2.1.0.1000/DokanSetup.exe"
           7z x -o/tmp/dokan /tmp/dokan.zip dokan1.dll -r
           find /tmp/dokan -name "dokan1.dll" -exec cp {} virtual_fs/dokan/x64/ \;
           
