@@ -23,10 +23,24 @@ jobs:
         run: |
           ln -s $(pwd) ~/NxNandManager
           cd ~/NxNandManager/NxNandManager
+          
+          # Download and extract Dokan runtime DLL
+          mkdir -p virtual_fs/dokan/x64
+          curl -L -o /tmp/dokan.zip "https://github.com/dokan-dev/dokany/releases/download/v2.1.0.1000/Dokan_x64.exe"
+          7z x -o/tmp/dokan /tmp/dokan.zip dokan1.dll -r
+          find /tmp/dokan -name "dokan1.dll" -exec cp {} virtual_fs/dokan/x64/ \;
+          
+          # Build the project
           make -j"$(nproc)"
+          
+          # Package artifacts
           mkdir -p $GITHUB_WORKSPACE/bin
           cp NxNandManager.exe $GITHUB_WORKSPACE/bin
-          cp virtual_fs/dokan/x64/dokan1.dll $GITHUB_WORKSPACE/bin
+          if [ -f virtual_fs/dokan/x64/dokan1.dll ]; then
+            cp virtual_fs/dokan/x64/dokan1.dll $GITHUB_WORKSPACE/bin
+          else
+            echo "Warning: dokan1.dll not found, artifact may not run"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: NxNandManager
