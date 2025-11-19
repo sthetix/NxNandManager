@@ -515,8 +515,6 @@ bool NxHandle::read(void *buffer, DWORD* br, DWORD length)
     if(br) *br = 0;
 
     auto init_pointer = virtual_currentPtr();
-    dbg_printf("NxHandle::read() - offset=0x%llx, length=0x%x, virt_ptr=0x%llx, real_ptr=0x%llx [this=%p]\n",
-               lp_CurrentPointer.QuadPart, length, init_pointer, real_currentPtr(), this);
 
     // Set default buffer size 
     if (!length) 
@@ -573,8 +571,6 @@ bool NxHandle::read(void *buffer, DWORD* br, DWORD length)
     if (br)
         *br = bytesCount;
 
-    dbg_printf("NxHandle::read() - SUCCESS: read 0x%x bytes, new_ptr=0x%llx [this=%p]\n",
-               bytesCount, lp_CurrentPointer.QuadPart, this);
     return true;
 }
 
