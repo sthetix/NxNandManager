@@ -420,8 +420,10 @@ int main(int argc, char *argv[])
         else if (!strncmp(currArg, BYPASS_MD5SUM_FLAG, array_countof(BYPASS_MD5SUM_FLAG) - 1))
             BYPASS_MD5SUM = true;
 
-        else if (!strncmp(currArg, DEBUG_MODE_FLAG, array_countof(DEBUG_MODE_FLAG) - 1))
+        else if (!strncmp(currArg, DEBUG_MODE_FLAG, array_countof(DEBUG_MODE_FLAG) - 1)) {
             isdebug = true;
+            init_debug_log();
+        }
 
         else if (!strncmp(currArg, FORCE_FLAG, array_countof(FORCE_FLAG) - 1))
             FORCE = true;
@@ -1219,6 +1221,7 @@ int main(int argc, char *argv[])
 
     SetThreadExecutionState(ES_CONTINUOUS);
 
+    close_debug_log();
     exit(EXIT_SUCCESS);
 }
 

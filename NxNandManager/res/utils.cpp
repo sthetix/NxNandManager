@@ -1,6 +1,26 @@
 #include "utils.h"
 using namespace std;
 
+static FILE* debug_log_file = nullptr;
+
+void init_debug_log() {
+    if (!debug_log_file && isdebug) {
+        debug_log_file = fopen("nxnm_debug.log", "w");
+        if (debug_log_file) {
+            fprintf(debug_log_file, "NxNandManager Debug Log\n");
+            fprintf(debug_log_file, "======================\n\n");
+            fflush(debug_log_file);
+        }
+    }
+}
+
+void close_debug_log() {
+    if (debug_log_file) {
+        fclose(debug_log_file);
+        debug_log_file = nullptr;
+    }
+}
+
 wchar_t *convertCharArrayToLPCWSTR(const char* charArray)
 {
 	wchar_t* wString = new wchar_t[4096];
@@ -557,10 +577,21 @@ void dbg_printf (const char *format, ...)
 	if(!isdebug)
 		return;
 
+	init_debug_log();
+
 	va_list args;
 	va_start( args, format );
 	vprintf(format, args);
-	va_end( args );    
+	va_end( args );
+
+	// Write to log file
+	if (debug_log_file) {
+		va_list args2;
+		va_start( args2, format );
+		vfprintf(debug_log_file, format, args2);
+		va_end( args2 );
+		fflush(debug_log_file);
+	}    
 
 #if defined(ENABLE_GUI)
     if (isGUI)
@@ -598,10 +629,19 @@ void dbg_wprintf (const wchar_t *format, ...)
     else
 #endif
     {
+        init_debug_log();
         wchar_t line[MAX_PATH];
         va_start( args, format );
         vwprintf(format, args);
         va_end( args );
+        
+        // Write to log file
+        if (debug_log_file) {
+            va_start( args, format );
+            vfwprintf(debug_log_file, format, args);
+            va_end( args );
+            fflush(debug_log_file);
+        }
     }
 }
 
