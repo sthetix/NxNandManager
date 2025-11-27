@@ -1,34 +1,48 @@
-name: build
+name: Build NxNandManager
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ master ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ master ]
   workflow_dispatch:
+
 jobs:
-  build:
+  build-windows:
     runs-on: windows-latest
+
     steps:
-      - uses: actions/checkout@v3
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          install: >-
-            base-devel
-            mingw-w64-x86_64-toolchain
-            mingw64/mingw-w64-x86_64-qt5-static
-      - name: build
-        shell: msys2 {0}
-        run: |
-          ln -s $(pwd) ~/NxNandManager
-          cd ~/NxNandManager/NxNandManager/gui
-          /mingw64/qt5-static/bin/qmake.exe NxNandManager.pro 'CONFIG += STATIC ARCH64'
-          make -j"$(nproc)"
-          mkdir -p $GITHUB_WORKSPACE/bin
-          cp release/NxNandManager.exe $GITHUB_WORKSPACE/bin
-          cp ../virtual_fs/dokan/x64/dokan1.dll $GITHUB_WORKSPACE/bin
-      - uses: actions/upload-artifact@v4
-        with:
-          name: NxNandManager
-          path: bin/*
+    - uses: actions/checkout@v3
+
+    - name: Setup MinGW
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: >-
+          mingw-w64-x86_64-gcc
+          mingw-w64-x86_64-make
+          make
+
+    - name: Build
+      shell: msys2 {0}
+      run: |
+        cd NxNandManager
+        make clean
+        make -j$(nproc)
+
+    - name: Copy DLLs
+      shell: msys2 {0}
+      run: |
+        cd NxNandManager
+        cp virtual_fs/dokan/x64/dokan1.dll .
+        cp lib/openssl/bin/*.dll .
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: NxNandManager-Windows-x64
+        path: |
+          NxNandManager/NxNandManager.exe
+          NxNandManager/*.dll
+        retention-days: 90
