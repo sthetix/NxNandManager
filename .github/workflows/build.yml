@@ -26,10 +26,19 @@ jobs:
           cd NxNandManager
           make clean
           make -j"$(nproc)"
-          mkdir -p $GITHUB_WORKSPACE/bin
-          cp NxNandManager.exe $GITHUB_WORKSPACE/bin/
-          cp virtual_fs/dokan/x64/dokan1.dll $GITHUB_WORKSPACE/bin/
-          cp lib/openssl/bin/*.dll $GITHUB_WORKSPACE/bin/
+          mkdir -p "$GITHUB_WORKSPACE/bin"
+          cp NxNandManager.exe "$GITHUB_WORKSPACE/bin/"
+          cp virtual_fs/dokan/x64/dokan1.dll "$GITHUB_WORKSPACE/bin/"
+
+          # Copy OpenSSL DLLs installed by msys2 (mingw-w64-x86_64-openssl)
+          # Use nullglob to avoid "no match" errors if no files are present
+          shopt -s nullglob
+          openssl_dlls=(/mingw64/bin/libcrypto*.dll /mingw64/bin/libssl*.dll)
+          if [ ${#openssl_dlls[@]} -gt 0 ]; then
+            cp "${openssl_dlls[@]}" "$GITHUB_WORKSPACE/bin/" || true
+          else
+            echo "No OpenSSL DLLs found in /mingw64/bin — skipping copy"
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
