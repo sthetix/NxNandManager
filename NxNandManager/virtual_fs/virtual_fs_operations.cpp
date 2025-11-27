@@ -72,6 +72,12 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_createfile(LPCWSTR filename, PDOKAN_IO
     auto filename_str = std::wstring(filename);
     virtual_fs_helper::RemoveStreamType(filename_str);
 
+    static int createfile_call_count = 0;
+    createfile_call_count++;
+    if (createfile_call_count % 10 == 0) {
+        dbg_printf("CreateFile called %d times (latest: %S)\n", createfile_call_count, filename_str.c_str());
+    }
+
     auto f = filenodes->find(filename_str);
     auto stream_names = virtual_fs_helper::GetStreamNames(filename_str);
     auto nxp = filenodes->nx_part;
@@ -578,9 +584,9 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_findfiles(LPCWSTR filename,
                                                PDOKAN_FILE_INFO dokanfileinfo) {
   auto filenodes = GET_FS_INSTANCE;
   auto filename_str = std::wstring(filename);
+  dbg_wprintf(L"FindFiles: %ls (start)\n", filename_str.c_str());
   auto files = filenodes->list_folder(filename_str);
   WIN32_FIND_DATAW findData;
-  //dbg_wprintf(L"FindFiles: %ls\n", filename_str.c_str());
   ZeroMemory(&findData, sizeof(WIN32_FIND_DATAW));
   for (const auto& f : files) {
     if (f->main_stream) continue; // Do not list File Streams
@@ -609,6 +615,7 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_findfiles(LPCWSTR filename,
         */
     fill_finddata(&findData, dokanfileinfo);
   }
+  dbg_wprintf(L"FindFiles: %ls (done, %d files)\n", filename_str.c_str(), files.size());
   return STATUS_SUCCESS;
 }
 
