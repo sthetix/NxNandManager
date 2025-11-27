@@ -92,12 +92,16 @@ void printStorageInfo(NxStorage *storage)
 
     if (nullptr != storage->getNxPartition(BOOT0))
     {
-        printf("SoC revision   : %s\n", storage->isEristaBoot0 ? "Erista" : "Unknown - Mariko");
+        printf("SoC revision   : %s\n", storage->isEristaBoot0 ? "Erista" : "Mariko");
 
         if (storage->isEristaBoot0)
         {
             printf("AutoRCM        : %s\n", storage->autoRcm ? "ENABLED" : "DISABLED");
             printf("Bootloader ver.: %d\n", static_cast<int>(storage->bootloader_ver));
+        }
+        else
+        {
+            printf("Note: AutoRCM and bootloader info not available for Mariko\n");
         }
     }
     if (storage->firmware_version.major > 0)
@@ -610,7 +614,7 @@ int main(int argc, char *argv[])
             throwException("Cannot apply autoRCM to input type %s", (void*)nx_input.getNxTypeAsStr());
 
         if (!nx_input.isEristaBoot0)
-            throwException("Cannot apply autoRCM, input doesn't contain a valid Erista's BOOT0 (Mariko?)");
+            throwException("Cannot apply autoRCM, Mariko units do not support autoRCM");
 
         if (!nx_input.setAutoRcm(autoRCM))
             throwException("Failed to apply autoRCM!");

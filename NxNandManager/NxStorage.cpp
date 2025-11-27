@@ -303,12 +303,27 @@ void NxStorage::constructor(const wstring &storage)
         }
     }
 
-    // Find needle (PK11) in haystack (BOOT1)
+    // Detect Mariko BOOT0 by size (0x180000 = 1.5MB)
+    if (type == UNKNOWN && m_size == 0x180000)
+    {
+        type = BOOT0;
+        isEristaBoot0 = false; // Mariko BOOT0
+        dbg_printf("NxStorage::NxStorage() - Mariko BOOT0 identified by size (0x180000)\n");
+    }
+
+    // Detect Mariko BOOT1 by size (0x200000 = 2MB)
+    if (type == UNKNOWN && m_size == 0x200000)
+    {
+        type = BOOT1;
+        dbg_printf("NxStorage::NxStorage() - Mariko BOOT1 identified by size (0x200000)\n");
+    }
+
+    // Find needle (PK11) in haystack (BOOT1) - works for both Erista and Mariko
     if (type == UNKNOWN && m_size <= 0x400000)
     {
         nxHandle->initHandle();
         while (nxHandle->read(buff, &bytesRead, NX_BLOCKSIZE))
-        {        
+        {
             std::string haystack(buff, buff + NX_BLOCKSIZE);
             if (haystack.find("PK11") != std::string::npos) {
                 type = BOOT1;
