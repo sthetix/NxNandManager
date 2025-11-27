@@ -5,6 +5,8 @@
 #include "qutils.h"
 #include "progress.h"
 #include "mainwindow.h"
+#include <QDateTime>
+#include <QTextStream>
 
 void clearFiles(NxFileList files) {
     for (auto f : files)
@@ -626,16 +628,31 @@ CpyQueue Explorer::getCopyQueue(NxFileList selectedFiles, bool force_dirOutput)
     return queue;
 }
 
+void logError(const QString& message) {
+    QFile logFile("NxNandManager.log");
+    if (logFile.open(QIODevice::Append | QIODevice::Text)) {
+        QTextStream out(&logFile);
+        out << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz") << " | " << message << "\n";
+    }
+}
+
 void Explorer::do_copy(CpyQueue queue)
 {
-    if (queue.isEmpty()) return; // prevent nullptr exception
+    logError("Explorer::do_copy started.");
+    if (queue.isEmpty()) {
+        logError("Explorer::do_copy finished: queue was empty.");
+        return; // prevent nullptr exception
+    }
 
     u32 buff_size = 0x400000; // 4 MB
     u8* buffer = (u8*)malloc(buff_size); // Allocate buffer
     auto exit = [&](const QString &err = "", NxFile* file = nullptr) { // exit lamda
         free(buffer);
         if (file) file->close();
-        if (!err.isEmpty()) emit error_signal(1, err);
+        if (!err.isEmpty()) {
+            logError("Explorer::do_copy exiting with error: " + err);
+            emit error_signal(1, err);
+        }
         emit workFinished();
     };
 
@@ -652,6 +669,7 @@ void Explorer::do_copy(CpyQueue queue)
     while (!queue.isEmpty()) // Process queue
     {
         auto item = queue.dequeue();
+        logError("Processing item: " + QString::fromStdWString(item.nxFile->completePath()));
         if (isdebug) dbg_wprintf(L"Explorer::do_copy() dequeue %ls\n", item.source.toStdWString().c_str());
 
         if (!item.nxFile->open())
@@ -670,10 +688,24 @@ void Explorer::do_copy(CpyQueue queue)
         if (moreThan1File) emit sendProgress(spi);
 
         UINT br; s64 bw;
-        while (!item.nxFile->read((void*)buffer, buff_size, &br) && br)
+        FRESULT read_res;
+        while (true)
         {
-            if ((bw = out_file.write((const char*)buffer, (qint64)br)) < 0)
-                return exit("Failed to write to " + item.destination, item.nxFile);
+            read_res = item.nxFile->read((void*)buffer, buff_size, &br);
+
+            if (read_res != FR_OK) {
+                QString errorMsg = QString("Failed to read from %1. Error code: %2").arg(QString::fromStdWString(item.nxFile->completePath())).arg(read_res);
+                return exit(errorMsg, item.nxFile);
+            }
+
+            if (br == 0) { // End of file
+                break;
+            }
+
+            if ((bw = out_file.write((const char*)buffer, (qint64)br)) < 0) {
+                QString errorMsg = "Failed to write to " + item.destination;
+                return exit(errorMsg, item.nxFile);
+            }
 
             pi.bytesCount += (u64)bw;
             spi.bytesCount += (u64)bw;
@@ -682,7 +714,9 @@ void Explorer::do_copy(CpyQueue queue)
         }
         out_file.close();
         item.nxFile->close();
+        logError("Finished processing item: " + QString::fromStdWString(item.nxFile->completePath()));
     }
+    logError("Explorer::do_copy finished successfully.");
     exit();
 }
 

@@ -275,9 +275,9 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_createfile(LPCWSTR filename, PDOKAN_IO
                  */
                 if (!f) return STATUS_OBJECT_NAME_NOT_FOUND;
 
-                // Alloc new file handle
-                if (!alloc_NxFile(FA_OPEN_EXISTING | FA_WRITE | FA_READ))
-                    return STATUS_OBJECT_NAME_NOT_FOUND;
+                // For OPEN_EXISTING, don't pre-allocate any handle
+                // Files will be opened on-demand in read/write operations
+                // This matches version 5.0 behavior which worked for physical drives
 
                 if (desiredaccess & FILE_EXECUTE) {
                   f->times.lastaccess = filetimes::get_currenttime();
@@ -411,11 +411,33 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_readfile(LPCWSTR filename, LPVOID buff
         return STATUS_SUCCESS;
     }
     auto f = filenodes->find(filename_str);
-    if (!f || !dokanfileinfo->Context)
+    if (!f)
         return STATUS_OBJECT_NAME_NOT_FOUND;
 
-    auto nxFile = GET_FILE_INSTANCE;
-    return nxFile->read((u64)offset, (void*)buffer, bufferlength, (u32*)readlength);
+    // If Context exists, use NxFile
+    if (dokanfileinfo->Context) {
+        auto nxFile = GET_FILE_INSTANCE;
+        return nxFile->read((u64)offset, (void*)buffer, bufferlength, (u32*)readlength);
+    }
+
+    // Fallback: Use NxFile from filenode (created during populate)
+    // With single-threaded Dokan (thread_number = 1), this is safe
+    auto nxp = filenodes->nx_part;
+    if (!nxp->is_mounted())
+        return STATUS_OBJECT_NAME_NOT_FOUND;
+
+    auto nxFile_from_node = f->get_nxfile();
+    if (!nxFile_from_node)
+        return STATUS_OBJECT_NAME_NOT_FOUND;
+
+    // Open the file if not already open
+    if (!nxFile_from_node->isOpen()) {
+        if (!nxFile_from_node->open(FA_READ))
+            return STATUS_OBJECT_NAME_NOT_FOUND;
+    }
+
+    // Use the NxFile's read method
+    return nxFile_from_node->read((u64)offset, (void*)buffer, bufferlength, (u32*)readlength);
 }
 
 static NTSTATUS DOKAN_CALLBACK virtual_fs_writefile(LPCWSTR filename, LPCVOID buffer,
@@ -436,8 +458,32 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_writefile(LPCWSTR filename, LPCVOID bu
 
     dbg_wprintf(L"WriteFile: %ls (Ctx: %I64d)\n", filename_str.c_str(), dokanfileinfo->Context);
     auto f = filenodes->find(filename_str);
-    if (!f || !dokanfileinfo->Context)
+    if (!f)
         return STATUS_OBJECT_NAME_NOT_FOUND;
+
+    // If Context is NULL, use NxFile from filenode
+    if (!dokanfileinfo->Context) {
+        auto nxp = filenodes->nx_part;
+        if (!nxp->is_mounted())
+            return STATUS_OBJECT_NAME_NOT_FOUND;
+
+        auto nxFile_from_node = f->get_nxfile();
+        if (!nxFile_from_node)
+            return STATUS_OBJECT_NAME_NOT_FOUND;
+
+        // Open the file if not already open
+        if (!nxFile_from_node->isOpen()) {
+            if (!nxFile_from_node->open(FA_READ | FA_WRITE))
+                return STATUS_OBJECT_NAME_NOT_FOUND;
+        }
+
+        auto res = nxFile_from_node->write((u64)offset, (void*)buffer, number_of_bytes_to_write, (u32*)number_of_bytes_written);
+
+        if (offset + *number_of_bytes_written > f->size)
+            f->set_endoffile(offset + *number_of_bytes_written);
+
+        return res ? STATUS_OBJECT_NAME_NOT_FOUND : STATUS_SUCCESS;
+    }
 
     auto file_size = f->get_filesize();
     auto nxFile = GET_FILE_INSTANCE;
