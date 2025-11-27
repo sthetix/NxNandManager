@@ -586,6 +586,21 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_findfiles(LPCWSTR filename,
   auto filename_str = std::wstring(filename);
   dbg_wprintf(L"FindFiles: %ls (start)\n", filename_str.c_str());
   auto files = filenodes->list_folder(filename_str);
+
+  // If cache is empty for root directory, repopulate from filesystem
+  // This happens after deleting files - the cache becomes stale
+  if (files.empty() && filename_str == L"\\") {
+      dbg_printf("FindFiles: Root directory cache is empty, repopulating...\n");
+      auto nxp = filenodes->nx_part;
+      auto vfs = nxp->vfs();
+      if (vfs && vfs->populate() == 0) {
+          dbg_printf("FindFiles: Repopulation successful\n");
+          files = filenodes->list_folder(filename_str);
+      } else {
+          dbg_printf("FindFiles: Repopulation failed\n");
+      }
+  }
+
   WIN32_FIND_DATAW findData;
   ZeroMemory(&findData, sizeof(WIN32_FIND_DATAW));
   for (const auto& f : files) {
