@@ -39,7 +39,7 @@ jobs:
         cp lib/openssl/bin/*.dll .
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: NxNandManager-Windows-x64
         path: |
