@@ -800,28 +800,38 @@ virtual_fs_unlockfile(LPCWSTR filename, LONGLONG byte_offset, LONGLONG length,
 static NTSTATUS DOKAN_CALLBACK virtual_fs_getdiskfreespace(
     PULONGLONG free_bytes_available, PULONGLONG total_number_of_bytes,
     PULONGLONG total_number_of_free_bytes, PDOKAN_FILE_INFO dokanfileinfo) {
-  //dbg_wprintf(L"GetDiskFreeSpace\n");
+  dbg_wprintf(L"GetDiskFreeSpace called\n");
   auto nxp = GET_FS_INSTANCE->nx_part;
   auto fs = nxp->fs();
   u64 tb = (u64)fs->n_fatent * (u64)fs->csize * (u64)512;
   u64 fb = 0;
 
-  // For read-only drives (physical drives), skip expensive free space calculation
-  // This prevents hanging when Windows tries to calculate free space before copying files
+  dbg_printf("GetDiskFreeSpace: isReadOnly=%d, free_clst=0x%X\n",
+             nxp->parent->nxHandle->isReadOnly(), fs->free_clst);
+
+  // For read-only drives (physical drives), report 0 free bytes
   if (nxp->parent->nxHandle->isReadOnly())
   {
-      // Report 0 free bytes for read-only drives
+      dbg_printf("GetDiskFreeSpace: Read-only drive, reporting 0 free\n");
       fb = 0;
   }
-  else if (!fs->free_clst || fs->free_clst == 0xFFFFFFFF)
+  // If free_clst is already cached by FatFS, use it
+  else if (fs->free_clst && fs->free_clst != 0xFFFFFFFF)
   {
-      // For writable drives, calculate free space (this can be slow on large partitions)
-      DWORD free_clst;
-      nxp->f_getfree(L"", &free_clst, &fs);
-      fb = (u64)free_clst * (u64)fs->csize * (u64)512;
+      dbg_printf("GetDiskFreeSpace: Using cached free_clst\n");
+      fb = (u64)fs->free_clst * (u64)fs->csize * (u64)512;
   }
-  else fb = (u64)fs->free_clst * (u64)fs->csize * (u64)512;
+  // Otherwise, report total capacity as free space estimate to avoid hanging
+  // This prevents Windows from hanging on "Calculating..." when copying files
+  // The actual free space check will happen when writing fails due to disk full
+  else
+  {
+      dbg_printf("GetDiskFreeSpace: free_clst not cached, reporting estimated free space (90%% of total)\n");
+      // Report 90% of total capacity as free to be safe
+      fb = (u64)(tb * 0.9);
+  }
 
+  dbg_printf("GetDiskFreeSpace: returning total=%llu free=%llu\n", tb, fb);
   *free_bytes_available = (ULONGLONG)fb;
   *total_number_of_bytes = (ULONGLONG)tb;
   *total_number_of_free_bytes = (ULONGLONG)fb;
