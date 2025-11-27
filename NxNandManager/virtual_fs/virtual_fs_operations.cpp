@@ -805,11 +805,20 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_getdiskfreespace(
   auto fs = nxp->fs();
   u64 tb = (u64)fs->n_fatent * (u64)fs->csize * (u64)512;
   u64 fb = 0;
-  if (!fs->free_clst || fs->free_clst == 0xFFFFFFFF)
+
+  // For read-only drives (physical drives), skip expensive free space calculation
+  // This prevents hanging when Windows tries to calculate free space before copying files
+  if (nxp->parent->nxHandle->isReadOnly())
   {
+      // Report 0 free bytes for read-only drives
+      fb = 0;
+  }
+  else if (!fs->free_clst || fs->free_clst == 0xFFFFFFFF)
+  {
+      // For writable drives, calculate free space (this can be slow on large partitions)
       DWORD free_clst;
       nxp->f_getfree(L"", &free_clst, &fs);
-      tb = (u64)free_clst * (u64)fs->csize * (u64)512;
+      fb = (u64)free_clst * (u64)fs->csize * (u64)512;
   }
   else fb = (u64)fs->free_clst * (u64)fs->csize * (u64)512;
 
