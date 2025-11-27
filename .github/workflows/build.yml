@@ -1,48 +1,37 @@
-name: Build NxNandManager
+name: build
 
 on:
   push:
-    branches: [ master ]
+    branches: [ "master" ]
   pull_request:
-    branches: [ master ]
+    branches: [ "master" ]
   workflow_dispatch:
 
 jobs:
-  build-windows:
+  build:
     runs-on: windows-latest
-
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v3
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: >-
+            base-devel
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-openssl
 
-    - name: Setup MinGW
-      uses: msys2/setup-msys2@v2
-      with:
-        msystem: MINGW64
-        update: true
-        install: >-
-          mingw-w64-x86_64-gcc
-          mingw-w64-x86_64-make
-          make
+      - name: Build CLI
+        shell: msys2 {0}
+        run: |
+          cd NxNandManager
+          make clean
+          make -j"$(nproc)"
+          mkdir -p $GITHUB_WORKSPACE/bin
+          cp NxNandManager.exe $GITHUB_WORKSPACE/bin/
+          cp virtual_fs/dokan/x64/dokan1.dll $GITHUB_WORKSPACE/bin/
+          cp lib/openssl/bin/*.dll $GITHUB_WORKSPACE/bin/
 
-    - name: Build
-      shell: msys2 {0}
-      run: |
-        cd NxNandManager
-        make clean
-        make -j$(nproc)
-
-    - name: Copy DLLs
-      shell: msys2 {0}
-      run: |
-        cd NxNandManager
-        cp virtual_fs/dokan/x64/dokan1.dll .
-        cp lib/openssl/bin/*.dll .
-
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: NxNandManager-Windows-x64
-        path: |
-          NxNandManager/NxNandManager.exe
-          NxNandManager/*.dll
-        retention-days: 90
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NxNandManager
+          path: bin/*
