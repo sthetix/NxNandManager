@@ -329,15 +329,44 @@ void NxStorage::constructor(const wstring &storage)
         }
         else
         {
-            // Try to detect by looking for PK11 in BOOT1
+            // For drives (e.g., mounted via Hekate), try to detect by scanning for PK11 or checking BCT patterns
+            // First, try to detect by looking for PK11 in BOOT1
+            bool foundPK11 = false;
             nxHandle->initHandle();
             while (nxHandle->read(buff, &bytesRead, NX_BLOCKSIZE))
             {
                 std::string haystack(buff, buff + NX_BLOCKSIZE);
                 if (haystack.find("PK11") != std::string::npos) {
                     type = BOOT1;
+                    foundPK11 = true;
                     dbg_printf("NxStorage::NxStorage() - BOOT1 identified by PK11 needle in 4MB file\n");
                     break;
+                }
+            }
+
+            // If PK11 not found, check if it's NOT BOOT0 by absence of BOOT0 BCT magic at 0x530 and 0x2330
+            if (!foundPK11)
+            {
+                bool isBoot0 = false;
+                // Check Erista BOOT0 BCT at 0x530
+                if (nxHandle->read(0x530 - (0x530 % NX_BLOCKSIZE), buff, &bytesRead, NX_BLOCKSIZE)) {
+                    int remain = 0x530 % NX_BLOCKSIZE;
+                    if (hexStr(&buff[remain], 12) == "010021000E00000009000000") {
+                        isBoot0 = true;
+                    }
+                }
+                // Check Mariko BOOT0 BCT at 0x2330
+                if (!isBoot0 && nxHandle->read(0x2330 - (0x2330 % NX_BLOCKSIZE), buff, &bytesRead, NX_BLOCKSIZE)) {
+                    int remain = 0x2330 % NX_BLOCKSIZE;
+                    if (hexStr(&buff[remain], 12) == "B1D7EF7EA4EE00B1EA84F8CF") {
+                        isBoot0 = true;
+                    }
+                }
+
+                // If it's 4MB and not BOOT0, assume it's BOOT1 (likely encrypted Mariko)
+                if (!isBoot0) {
+                    type = BOOT1;
+                    dbg_printf("NxStorage::NxStorage() - BOOT1 identified by size (0x400000) and absence of BOOT0 magic (likely encrypted Mariko)\n");
                 }
             }
         }
