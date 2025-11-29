@@ -37,6 +37,7 @@ clean :
 	-@rm -rf *.o
 	-@rm -rf gui/NxNandManager.tres
 	-@rm -rf res/*.o
+	-@rm -rf virtual_fs/*.o
 	-@rm -rf lib/ZipLib/*.o
 	-@rm -rf lib/ZipLib/detail/*.o
 	-@rm -rf lib/ZipLib/extlibs/zlib/*.o

@@ -19,28 +19,71 @@ jobs:
             base-devel
             mingw-w64-x86_64-toolchain
             mingw-w64-x86_64-openssl
+            mingw-w64-x86_64-qt5
 
-      - name: Build CLI
+      - name: Build CLI (without GUI)
         shell: msys2 {0}
         run: |
           cd NxNandManager
+
+          # Temporarily disable GUI for CLI build
+          sed -i 's/#define ENABLE_GUI  1/#define ENABLE_GUI  0/' gui/gui.h
+
           make clean
           make -j"$(nproc)"
-          mkdir -p "$GITHUB_WORKSPACE/bin"
-          cp NxNandManager.exe "$GITHUB_WORKSPACE/bin/"
-          cp virtual_fs/dokan/x64/dokan1.dll "$GITHUB_WORKSPACE/bin/"
 
-          # Copy OpenSSL DLLs installed by msys2 (mingw-w64-x86_64-openssl)
-          # Use nullglob to avoid "no match" errors if no files are present
+          # Create CLI output directory
+          mkdir -p "$GITHUB_WORKSPACE/bin-cli"
+          cp NxNandManager.exe "$GITHUB_WORKSPACE/bin-cli/"
+          cp virtual_fs/dokan/x64/dokan1.dll "$GITHUB_WORKSPACE/bin-cli/"
+
+          # Copy OpenSSL DLLs
           shopt -s nullglob
           openssl_dlls=(/mingw64/bin/libcrypto*.dll /mingw64/bin/libssl*.dll)
           if [ ${#openssl_dlls[@]} -gt 0 ]; then
-            cp "${openssl_dlls[@]}" "$GITHUB_WORKSPACE/bin/" || true
+            cp "${openssl_dlls[@]}" "$GITHUB_WORKSPACE/bin-cli/" || true
           else
             echo "No OpenSSL DLLs found in /mingw64/bin — skipping copy"
           fi
 
+          # Restore GUI setting
+          sed -i 's/#define ENABLE_GUI  0/#define ENABLE_GUI  1/' gui/gui.h
+
+      - name: Build GUI (with Qt5)
+        shell: msys2 {0}
+        run: |
+          cd NxNandManager
+
+          # Ensure GUI is enabled
+          sed -i 's/#define ENABLE_GUI  0/#define ENABLE_GUI  1/' gui/gui.h
+
+          make clean
+          make -j"$(nproc)"
+
+          # Create GUI output directory
+          mkdir -p "$GITHUB_WORKSPACE/bin-gui"
+          cp NxNandManager.exe "$GITHUB_WORKSPACE/bin-gui/"
+          cp virtual_fs/dokan/x64/dokan1.dll "$GITHUB_WORKSPACE/bin-gui/"
+
+          # Copy OpenSSL DLLs
+          shopt -s nullglob
+          openssl_dlls=(/mingw64/bin/libcrypto*.dll /mingw64/bin/libssl*.dll)
+          if [ ${#openssl_dlls[@]} -gt 0 ]; then
+            cp "${openssl_dlls[@]}" "$GITHUB_WORKSPACE/bin-gui/" || true
+          fi
+
+          # Copy Qt5 DLLs
+          qt5_dlls=(/mingw64/bin/Qt5Core.dll /mingw64/bin/Qt5Gui.dll /mingw64/bin/Qt5Widgets.dll)
+          if [ ${#qt5_dlls[@]} -gt 0 ]; then
+            cp "${qt5_dlls[@]}" "$GITHUB_WORKSPACE/bin-gui/" || true
+          fi
+
       - uses: actions/upload-artifact@v4
         with:
-          name: NxNandManager
-          path: bin/*
+          name: NxNandManager-CLI
+          path: bin-cli/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NxNandManager-GUI
+          path: bin-gui/*

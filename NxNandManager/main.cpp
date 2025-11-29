@@ -698,17 +698,10 @@ int main(int argc, char *argv[])
 
         printf("FAT filesystem mounted.\n");
 
-        virtual_fs::virtual_fs v_fs(in_part);
-        printf("Virtual fs initialized.\n");
-
-        if (driveLetter)
-            v_fs.setDriveLetter(driveLetter);
-
-        printf("Populating virtual fs...             \r");
-        int ent = v_fs.populate();
-        if(ent < 0)
-            throwException(ERR_FAILED_TO_POPULATE_VFS);
-        printf("Virtual fs populated (%d entries found).\n", ent);                
+        // Use partition's mount_vfs() so m_vfs is properly heap-allocated
+        // and assigned to the partition (so nxp->vfs() won't be NULL).
+        // Enable VirtualNXA to treat .nca files as single files instead of directories
+        VFSOptions options = VirtualNXA;
 
         auto callback = [](NTSTATUS status) {
             if (status == DOKAN_SUCCESS)
@@ -725,10 +718,11 @@ int main(int argc, char *argv[])
             }
             else throwException("Operation cancelled");
         };
-        v_fs.setCallBackFunction(callback);
 
         printf("Mounting virtual disk... (CTRL+C to unmount & quit)\n");
-        v_fs.run();
+        int r = in_part->mount_vfs(true, driveLetter, options, callback);
+        if (r)
+            throwException(r);
 
         exit(EXIT_SUCCESS);
     }

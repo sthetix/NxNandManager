@@ -106,6 +106,26 @@ void fs_filenodes::deleteNxFiles()
         f.second->delete_nxfile();
 }
 
+void fs_filenodes::clear()
+{
+    std::lock_guard<std::recursive_mutex> lock(_filesnodes_mutex);
+
+    dbg_printf("Clearing filenodes cache...\n");
+
+    // Save root node
+    auto root = _filenodes[L"\\"];
+
+    // Clear all nodes
+    _filenodes.clear();
+    _directoryPaths.clear();
+
+    // Restore root
+    _filenodes[L"\\"] = root;
+    _directoryPaths.emplace(L"\\", std::set<std::shared_ptr<filenode>>());
+
+    dbg_printf("Filenodes cache cleared, root preserved\n");
+}
+
 NTSTATUS fs_filenodes::add(const std::shared_ptr<filenode>& f) {
   std::lock_guard<std::recursive_mutex> lock(_filesnodes_mutex);
 
@@ -172,7 +192,7 @@ void fs_filenodes::remove(const std::shared_ptr<filenode>& f) {
 
   std::lock_guard<std::recursive_mutex> lock(_filesnodes_mutex);
   auto fileName = f->get_filename();
-  dbg_wprintf(L"Remove: %s\n", fileName.c_str());
+  dbg_wprintf(L"Remove: %ls\n", fileName.c_str());
 
   // Remove node from fileNodes and directoryPaths
   _filenodes.erase(fileName);

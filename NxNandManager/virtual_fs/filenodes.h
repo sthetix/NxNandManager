@@ -80,7 +80,11 @@ class fs_filenodes {
 
   void deleteNxFiles();
 
+  // Clear all filenodes except root directory
+  void clear();
+
   NxPartition* nx_part;
+  class virtual_fs* parent_vfs;  // Pointer to parent virtual_fs object
   DWORD volumeSerial;
   WCHAR mount_point[5] = L" :\\\0";
 

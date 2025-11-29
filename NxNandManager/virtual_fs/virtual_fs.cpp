@@ -36,9 +36,18 @@ namespace virtual_fs {
 
 virtual_fs::virtual_fs(NxPartition* part)
 {
+    dbg_printf("virtual_fs::virtual_fs() constructor: this=%p, part=%p\n", this, part);
     partition = part;
     fs_filenodes = unique_ptr<::virtual_fs::fs_filenodes>(new ::virtual_fs::fs_filenodes());
     fs_filenodes->nx_part = partition;
+    fs_filenodes->parent_vfs = this;  // WORKAROUND: Store pointer to this virtual_fs object
+    dbg_printf("virtual_fs::virtual_fs() constructor: fs_filenodes=%p, fs_filenodes->nx_part=%p\n", fs_filenodes.get(), fs_filenodes->nx_part);
+
+    // Register this virtual_fs instance with the NxPartition so partition->vfs()
+    // returns a valid pointer even if the VFS was created on the stack.
+    dbg_printf("virtual_fs::virtual_fs() constructor: About to call partition->assign_vfs(this=%p)\n", this);
+    partition->assign_vfs(this);
+    dbg_printf("virtual_fs::virtual_fs() constructor: After assign_vfs, part->vfs()=%p (should be %p)\n", part->vfs(), this);
     callback_func = nullptr;
 }
 
@@ -54,6 +63,8 @@ int virtual_fs::populate()
     FILINFO fno;
     int nodes_count = 0;
 
+    dbg_printf("Starting filesystem scan from root...\n");
+
     // Populate file nodes (recursive scan)
     queue.push_back(L"\\"); // Enqueue root
     do {
@@ -63,6 +74,7 @@ int virtual_fs::populate()
 
         // Open & scan dir
         auto open = partition->f_opendir(&dp, dir.c_str()) == FR_OK;
+        dbg_wprintf(L"Scanning directory: %ls (open=%d)\n", dir.c_str(), open);
         while(open && f_readdir(&dp, &fno) == FR_OK)
         {
             if (fno.fname[0] == '\0')
@@ -70,6 +82,8 @@ int virtual_fs::populate()
 
             bool isDir = fno.fattrib == FILE_ATTRIBUTE_DIRECTORY || (fno.fattrib == FILE_ATTRIBUTE_NX_ARCHIVE && !virtualize_nxa);
             auto filename = wstring(dir).append(dir.back() != L'\\' ? L"\\" : L"").append(fno.fname);
+
+            dbg_wprintf(L"  Found: %ls (isDir=%d, attr=0x%x)\n", filename.c_str(), isDir, fno.fattrib);
 
             NxFileFlag options = virtualize_nxa ? VirtualizeNXA : SimpleFile;
             NxFile *nxFile = isDir ? nullptr : new NxFile(partition, filename, options);
@@ -97,17 +111,25 @@ int virtual_fs::populate()
             nodes_count++;
 
             // Enqueue if directory
-            if (isDir)
+            if (isDir) {
+                dbg_wprintf(L"  Enqueuing directory for scan: %ls\n", filename.c_str());
                 queue.push_back(filename);
+            }
         }
         f_closedir(&dp);
     }
     while (queue.size());
+
+    dbg_printf("Filesystem scan complete: found %d nodes\n", nodes_count);
     return nodes_count;
 }
 
 void virtual_fs::run()
 {
+    dbg_printf("virtual_fs::run() START: this=%p, partition=%p, fs_filenodes=%p\n", this, partition, fs_filenodes.get());
+    dbg_printf("virtual_fs::run(): partition->vfs()=%p (should be %p)\n", partition->vfs(), this);
+    dbg_printf("virtual_fs::run(): fs_filenodes->nx_part=%p (should be %p)\n", fs_filenodes->nx_part, partition);
+
     DOKAN_OPTIONS dokan_options;
     ZeroMemory(&dokan_options, sizeof(DOKAN_OPTIONS));
     dokan_options.Version = DOKAN_VERSION;
@@ -152,7 +174,12 @@ void virtual_fs::run()
     dokan_options.MountPoint = mount_point;
     dokan_options.GlobalContext = reinterpret_cast<ULONG64>(fs_filenodes.get());
 
+    dbg_wprintf(L"virtual_fs::run(): About to call DokanMain() with mount_point=%ls\n", mount_point);
+    dbg_printf("virtual_fs::run(): GlobalContext=%p (fs_filenodes)\n", fs_filenodes.get());
+
     NTSTATUS status = DokanMain(&dokan_options, &virtual_fs_operations);
+
+    dbg_printf("virtual_fs::run(): DokanMain() returned with status=0x%x\n", status);
 
     if (callback_func)
         callback_func(status);

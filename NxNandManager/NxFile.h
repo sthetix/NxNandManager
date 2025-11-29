@@ -125,9 +125,9 @@ typedef enum : uint8_t {
 
 struct NxSplitOff {
     u64 off_start;
-    u32 size;
+    u64 size;
     wstring file;
-    u64 off_end() { return off_start + (u64)size - 1; }
+    u64 off_end() { return off_start + size - 1; }
 };
 
 struct AdditionalString {
@@ -157,6 +157,7 @@ public:
     ~NxFile();
 
 private:
+    bool delete_dir_recursive(const std::wstring &path);
     NxPartition * m_nxp;
     wstring m_filename;
     wstring m_filepath;
@@ -206,14 +207,14 @@ private:
 
     // NXA
     // Relative offset from u64 offset
-    u32 relativeOffset(u64 offset) {
-        return !isNXA() ? (u32)offset : (u32)(offset - (u64)m_files.at(getFileIxByOffset(offset)).off_start);}
+    u64 relativeOffset(u64 offset) {
+        return (!isNXA() || m_files.empty()) ? offset : (offset - (u64)m_files.at(getFileIxByOffset(offset)).off_start);}
     // Relative current offset
-    u32 relativeOffset() { return (u32)m_fp.fptr; }
+    u64 relativeOffset() { return (u64)m_fp.fptr; }
     // Absolute offset for a give u32 offset inside current file
-    u64 absoluteOffset(u32 offset) { return isNXA() ? curFile().off_start + offset : (u64)offset; }
+    u64 absoluteOffset(u32 offset) { return (isNXA() && !m_files.empty()) ? curFile().off_start + offset : (u64)offset; }
     // Absolute current offset
-    u64 absoluteOffset() { return isNXA() ? curFile().off_start + m_fp.fptr : (u64)m_fp.fptr; }
+    u64 absoluteOffset() { return (isNXA() && !m_files.empty()) ? curFile().off_start + m_fp.fptr : (u64)m_fp.fptr; }
 
 public:
     // Getters
