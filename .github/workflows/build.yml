@@ -18,7 +18,53 @@ jobs:
           install: >-
             base-devel
             mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-openssl
             mingw64/mingw-w64-x86_64-qt5-static
+
+      - name: Build CLI
+        shell: msys2 {0}
+        run: |
+          cd NxNandManager
+
+          # Create stub file for GUI functions when ENABLE_GUI=0
+          cat > gui_stub.cpp << 'EOF'
+          #include "gui/gui.h"
+          #if !defined(ENABLE_GUI) || ENABLE_GUI == 0
+          #include <string>
+          // Stub implementation for CLI build
+          void writeDebugLine(std::string line) {
+              // No-op for CLI build
+          }
+          #endif
+          EOF
+
+          # Disable GUI
+          sed -i 's/#define ENABLE_GUI  1/#define ENABLE_GUI  0/' gui/gui.h
+
+          # Add stub to compilation
+          echo "Building CLI version..."
+          g++ -c -std=c++11 -fexceptions -DUNICODE -D_UNICODE -fPIC -fpermissive gui_stub.cpp -o gui_stub.o
+
+          # Build with stub
+          make clean
+          make -j"$(nproc)"
+
+          # Link with stub
+          g++ -o NxNandManager.exe *.o gui_stub.o res/*.o virtual_fs/*.o lib/ZipLib/*.o lib/ZipLib/detail/*.o lib/ZipLib/extlibs/zlib/*.o lib/ZipLib/extlibs/lzma/*.o lib/ZipLib/extlibs/bzip2/*.o lib/fatfs/*.o -static -lcrypto -lcrypt32 -lwsock32 -lws2_32 -Lvirtual_fs/dokan/x64/lib -ldokan1 -Llib/openssl/lib 2>&1 | head -50 || true
+
+          # Restore GUI setting
+          sed -i 's/#define ENABLE_GUI  0/#define ENABLE_GUI  1/' gui/gui.h
+
+          # Create CLI output directory
+          mkdir -p $GITHUB_WORKSPACE/bin-cli
+          if [ -f NxNandManager.exe ]; then
+            cp NxNandManager.exe $GITHUB_WORKSPACE/bin-cli/
+            cp virtual_fs/dokan/x64/dokan1.dll $GITHUB_WORKSPACE/bin-cli/
+
+            # Copy OpenSSL DLLs
+            cp /mingw64/bin/libcrypto*.dll $GITHUB_WORKSPACE/bin-cli/ 2>/dev/null || true
+            cp /mingw64/bin/libssl*.dll $GITHUB_WORKSPACE/bin-cli/ 2>/dev/null || true
+          fi
 
       - name: Build GUI
         shell: msys2 {0}
@@ -27,11 +73,19 @@ jobs:
           cd ~/NxNandManager/NxNandManager/gui
           /mingw64/qt5-static/bin/qmake.exe NxNandManager.pro 'CONFIG += STATIC ARCH64'
           make -j"$(nproc)"
-          mkdir -p $GITHUB_WORKSPACE/bin
-          cp release/NxNandManager.exe $GITHUB_WORKSPACE/bin
-          cp ../virtual_fs/dokan/x64/dokan1.dll $GITHUB_WORKSPACE/bin
+
+          # Create GUI output directory
+          mkdir -p $GITHUB_WORKSPACE/bin-gui
+          cp release/NxNandManager.exe $GITHUB_WORKSPACE/bin-gui/
+          cp ../virtual_fs/dokan/x64/dokan1.dll $GITHUB_WORKSPACE/bin-gui/
+
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('bin-cli/NxNandManager.exe') != ''
+        with:
+          name: NxNandManager-CLI
+          path: bin-cli/*
 
       - uses: actions/upload-artifact@v4
         with:
-          name: NxNandManager
-          path: bin/*
+          name: NxNandManager-GUI
+          path: bin-gui/*
