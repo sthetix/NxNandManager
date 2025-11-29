@@ -24,11 +24,21 @@ jobs:
       - name: Verify Qt5-static installation
         shell: msys2 {0}
         run: |
-          echo "Checking if qt5-static is installed..."
+          echo "=== Checking Qt5-static installation ==="
           pacman -Q | grep qt5 || echo "No qt5 packages found"
-          echo "Checking for qmake..."
-          ls -la /mingw64/qt5-static/bin/qmake.exe 2>/dev/null || echo "qmake not found in /mingw64/qt5-static/bin/"
-          ls -la /mingw64/qt5-static/include/ 2>/dev/null | head -20 || echo "qt5-static include directory not found"
+
+          echo -e "\n=== Searching for qmake ==="
+          find /mingw64 -name "qmake.exe" 2>/dev/null || echo "qmake.exe not found anywhere in /mingw64"
+
+          echo -e "\n=== Checking common Qt locations ==="
+          ls -la /mingw64/qt5-static/ 2>/dev/null || echo "/mingw64/qt5-static/ not found"
+          ls -la /mingw64/bin/qmake* 2>/dev/null || echo "No qmake in /mingw64/bin/"
+
+          echo -e "\n=== Checking for Qt includes ==="
+          find /mingw64 -type d -name "QtWidgets" 2>/dev/null | head -5 || echo "QtWidgets directory not found"
+
+          echo -e "\n=== All installed files from qt5-static package ==="
+          pacman -Ql mingw-w64-x86_64-qt5-static 2>/dev/null | grep -E "(bin/qmake|include/qt)" | head -30 || echo "Cannot list qt5-static files"
 
       - name: Build CLI (without GUI)
         shell: msys2 {0}
