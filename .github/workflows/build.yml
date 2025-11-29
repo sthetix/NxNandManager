@@ -57,6 +57,10 @@ jobs:
           # Ensure GUI is enabled
           sed -i 's/#define ENABLE_GUI  0/#define ENABLE_GUI  1/' gui/gui.h
 
+          # Update Makefile to include Qt paths and libs for GUI build
+          sed -i 's|^CXXFLAGS=.*|CXXFLAGS=-std=c++11 -fexceptions -DUNICODE -D_UNICODE -fPIC -fpermissive -I/mingw64/include/qt5 -I/mingw64/include/qt5/QtCore -I/mingw64/include/qt5/QtGui -I/mingw64/include/qt5/QtWidgets|' Makefile
+          sed -i 's|^LIBS=.*|LIBS=-static -lcrypto -lcrypt32 -lwsock32 -lws2_32 -Lvirtual_fs/dokan/x64/lib -ldokan1 -Llib/openssl/lib -L/mingw64/lib -lQt5Widgets -lQt5Gui -lQt5Core|' Makefile
+
           make clean
           make -j"$(nproc)"
 
