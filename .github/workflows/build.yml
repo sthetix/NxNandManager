@@ -59,8 +59,8 @@ jobs:
           # Add Qt include paths to Makefile temporarily
           sed -i "s|INCLUDES=-Ivirtual_fs/dokan/include -Ilib/openssl/include|INCLUDES=-Ivirtual_fs/dokan/include -Ilib/openssl/include -I${QT_INCLUDE_DIR} -I${QT_INCLUDE_DIR}/QtCore -I${QT_INCLUDE_DIR}/QtGui -I${QT_INCLUDE_DIR}/QtWidgets -I${QT_INCLUDE_DIR}/QtWinExtras -I${QT_INCLUDE_DIR}/QtNetwork|" Makefile
 
-          # Add Qt libraries to LIBS for linking
-          sed -i 's|LIBS=-static -lcrypto|LIBS=-static -lQt5Core -lQt5Gui -lQt5Widgets -lQt5WinExtras -lQt5Network -lcrypto|' Makefile
+          # Add Qt library path and libraries to LIBS for linking
+          sed -i 's|LIBS=-static -lcrypto|LIBS=-L/mingw64/lib -lQt5Core -lQt5Gui -lQt5Widgets -lQt5WinExtras -lQt5Network -static -lcrypto|' Makefile
 
           # Build using Makefile
           make clean
