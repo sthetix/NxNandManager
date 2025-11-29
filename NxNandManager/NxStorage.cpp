@@ -19,28 +19,27 @@
 
 static MagicOffsets mgkOffArr[] =
 {
-    // { offset, magic, size, type, firmware }
-    { 0, "43414C30", 4, PRODINFO}, // PRODINFO ("CAL0" at offset 0x0)
-    { 0x680, "434552544946", 6, PRODINFOF}, // PRODINFOF ("CERTIF at offset 0x680")
-    { 0x200, "4546492050415254", 8, RAWNAND, 0 }, // RAWNAND ("EFI PART" at offset 0x200)
-    //{ 0x200, "54584E414E44", 6, TXNAND, 0}, // TX hidden partition ("TXNAND" at offset 0x200)
-    { 0x800200, "4546492050415254", 8, RAWMMC, 0}, // RAWMMC ("EFI PART" at offset 0x80000, i.e after 2 x 0x40000 for each BOOT)
-    { 0x1800200, "4546492050415254", 8, EMMC_PART, 0}, // RAWMMC
-    { 0x0530, "010021000E00000009000000", 12, BOOT0, 0}, // BOOT0 Erista (boot_data_version + block_size_log2 + page_size_log2 at offset 0x530)
-    { 0x0530, "584CB7CDC8A63184ABCD8671", 12, BOOT0, 0}, // BOOT0 Mariko/OLED (BCT has different values at offset 0x530)
-    { 0x0530, "A0606069A84360616069A843", 12, BOOT1, 0}, // BOOT1 Erista (BCT at offset 0x530)
-    { 0x0530, "222995A66AE9F39F2ACB1A4A", 12, BOOT1, 0}, // BOOT1 Mariko/OLED (BCT at offset 0x530)
+    // { offset, magic, size, type, firmware, isErista }
+    { 0, "43414C30", 4, PRODINFO, 0, false}, // PRODINFO ("CAL0" at offset 0x0)
+    { 0x680, "434552544946", 6, PRODINFOF, 0, false}, // PRODINFOF ("CERTIF at offset 0x680")
+    { 0x200, "4546492050415254", 8, RAWNAND, 0, false }, // RAWNAND ("EFI PART" at offset 0x200)
+    //{ 0x200, "54584E414E44", 6, TXNAND, 0, false}, // TX hidden partition ("TXNAND" at offset 0x200)
+    { 0x800200, "4546492050415254", 8, RAWMMC, 0, false}, // RAWMMC ("EFI PART" at offset 0x80000, i.e after 2 x 0x40000 for each BOOT)
+    { 0x1800200, "4546492050415254", 8, EMMC_PART, 0, false}, // RAWMMC
+    { 0x0530, "010021000E00000009000000", 12, BOOT0, 0, true}, // BOOT0 Erista (BCT at offset 0x530)
+    { 0x0530, "A0606069A84360616069A843", 12, BOOT1, 0, true}, // BOOT1 Erista (BCT at offset 0x530)
+    { 0x2330, "B1D7EF7EA4EE00B1EA84F8CF", 12, BOOT0, 0, false}, // BOOT0 Mariko/OLED (BCT at offset 0x2330)
     // BOOT1 => Look for PK11 magic (for firmware-specific detection)
-    { 0x13B4, "504B3131", 4, BOOT1, 1},
-    { 0x13F0, "504B3131", 4, BOOT1, 2},
-    { 0x1424, "504B3131", 4, BOOT1, 3},
-    { 0x12E8, "504B3131", 4, BOOT1, 4},
-    { 0x12D0, "504B3131", 4, BOOT1, 5},
-    { 0x12F0, "504B3131", 4, BOOT1, 6},
-    { 0x40AF8,"504B3131", 4, BOOT1, 7},
-    { 0x40ADC,"504B3131", 4, BOOT1, 8},
-    { 0x40ACC,"504B3131", 4, BOOT1, 8.1}, /* 8.1.0 -> 13.1.0 */
-    { 0x40AC0,"504B3131", 4, BOOT1, 9} /* unknown */
+    { 0x13B4, "504B3131", 4, BOOT1, 1, false},
+    { 0x13F0, "504B3131", 4, BOOT1, 2, false},
+    { 0x1424, "504B3131", 4, BOOT1, 3, false},
+    { 0x12E8, "504B3131", 4, BOOT1, 4, false},
+    { 0x12D0, "504B3131", 4, BOOT1, 5, false},
+    { 0x12F0, "504B3131", 4, BOOT1, 6, false},
+    { 0x40AF8,"504B3131", 4, BOOT1, 7, false},
+    { 0x40ADC,"504B3131", 4, BOOT1, 8, false},
+    { 0x40ACC,"504B3131", 4, BOOT1, 8.1, false}, /* 8.1.0 -> 13.1.0 */
+    { 0x40AC0,"504B3131", 4, BOOT1, 9, false} /* unknown */
 };
 
 
@@ -298,11 +297,12 @@ void NxStorage::constructor(const wstring &storage)
         dbg_printf("NxStorage::NxStorage() - Looking for magic %s (%s) at offset %s\n", mgk.magic, hexStr_to_ascii(mgk.magic).c_str(), n2hexstr(mgk.offset, 10).c_str());
         int remain = mgk.offset % NX_BLOCKSIZE; // Block align
         if (nxHandle->read(mgk.offset - remain, buff, &bytesRead, NX_BLOCKSIZE) && hexStr(&buff[remain], mgk.size) == mgk.magic)
-        {            
+        {
             type = mgk.type;
-            if (type == BOOT0) isEristaBoot0 = true;
-            dbg_printf("NxStorage::NxStorage() - MAGIC found at offset %s, type is %s\n", 
-                n2hexstr(mgk.offset, 10).c_str(), getNxTypeAsStr());
+            if (type == BOOT0) isEristaBoot0 = mgk.isErista;
+            dbg_printf("NxStorage::NxStorage() - MAGIC found at offset %s, type is %s%s\n",
+                n2hexstr(mgk.offset, 10).c_str(), getNxTypeAsStr(),
+                (type == BOOT0) ? (mgk.isErista ? " (Erista)" : " (Mariko)") : "");
             break;
         }
     }
@@ -640,7 +640,8 @@ void NxStorage::constructor(const wstring &storage)
                 int remain = mgk.offset % NX_BLOCKSIZE; // Block align
                 if (nxHandle->read(mgk.offset - remain, buff, &bytesRead, NX_BLOCKSIZE) && hexStr(&buff[remain], mgk.size) == mgk.magic)
                 {
-                    isEristaBoot0 = true;
+                    isEristaBoot0 = mgk.isErista;
+                    dbg_printf("NxStorage::NxStorage() - Secondary BOOT0 detection: %s\n", mgk.isErista ? "Erista" : "Mariko");
                     break;
                 }
             }

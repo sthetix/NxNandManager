@@ -39,6 +39,7 @@ struct MagicOffsets {
     u64 size;
     int type;
     float fw;
+    bool isErista; // true = Erista, false = Mariko (only relevant for BOOT0/BOOT1)
 };
 
 

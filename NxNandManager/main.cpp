@@ -202,7 +202,7 @@ int main(int argc, char *argv[])
     const char *input = nullptr, *output = nullptr, *partitions = nullptr, *keyset = nullptr, *user_resize = nullptr, *boot0 = nullptr, *boot1 = nullptr, *std_redir_output = nullptr;
     wchar_t driveLetter = L'\0';
     BOOL dokan_install = false, info = false, gui = false, setAutoRCM = false, autoRCM = false, decrypt = false, encrypt = false;
-    BOOL incognito = false, createEmuNAND = false, zipOutput = false, passThroughZeroes = false, cryptoCheck = false, mount = false;
+    BOOL incognito = false, createEmuNAND = false, zipOutput = false, passThroughZeroes = false, cryptoCheck = false, mount = false, formatPartition = false;
     EmunandType emunandType = unknown;
     u64 chunksize = 0;
     int io_num = 1;
@@ -247,6 +247,8 @@ int main(int argc, char *argv[])
             "                    Only applies to input type RAWNAND or PRODINFO\n\n"
             "  --enable_autoRCM  Enable auto RCM. -i must point to a valid BOOT0 file/drive\n"
             "  --disable_autoRCM Disable auto RCM. -i must point to a valid BOOT0 file/drive\n"
+            "  --format          Format partition to FAT32. -i must point to a valid NAND/partition.\n"
+            "                    Use -part to specify partition (SYSTEM or USER). -keyset is mandatory.\n"
             "  --crypto_check    Validate crypto for a given keyset file (-keyset) and input (-i)\n"
             "  -stdout_redirect  Path to file to redirect to (stdout+stderr) \n\n");
 
@@ -329,6 +331,7 @@ int main(int argc, char *argv[])
     const char DRIVE_LETTER_ARGUMENT[] = "-driveLetter";
     const char DOKAN_ARGUMENT[] = "--install_dokan";
     const char STDREDIR_ARGUMENT[] = "-stdout_redirect";
+    const char FORMAT_ARGUMENT[] = "--format";
 
 
     for (int i = 1; i < argc; i++)
@@ -454,6 +457,9 @@ int main(int argc, char *argv[])
         else if (!strncmp(currArg, MOUNT_ARGUMENT, array_countof(MOUNT_ARGUMENT) - 1))
             mount = true;
 
+        else if (!strncmp(currArg, FORMAT_ARGUMENT, array_countof(FORMAT_ARGUMENT) - 1))
+            formatPartition = true;
+
         else {
             printf("Argument (%s) is not allowed.\n\n", currArg);
             PrintUsage();
@@ -501,10 +507,10 @@ int main(int argc, char *argv[])
         exit(EXIT_SUCCESS);
     }
 
-    if (nullptr == input || (nullptr == output && !info && !setAutoRCM && !incognito && !createEmuNAND && !cryptoCheck && !mount))
+    if (nullptr == input || (nullptr == output && !info && !setAutoRCM && !incognito && !createEmuNAND && !cryptoCheck && !mount && !formatPartition))
         PrintUsage();
 
-    if ((encrypt || decrypt || cryptoCheck || mount) && nullptr == keyset)
+    if ((encrypt || decrypt || cryptoCheck || mount || formatPartition) && nullptr == keyset)
     {
         printf("-keyset missing\n\n");
         PrintUsage();
@@ -727,6 +733,44 @@ int main(int argc, char *argv[])
         exit(EXIT_SUCCESS);
     }
 
+    if (formatPartition)
+    {
+        if (not_in(nx_input.type, {RAWNAND, RAWMMC, SAFE, USER, SYSTEM}))
+            throwException("invalid input (must be RAWNAND, RAWMMC, SAFE, USER, or SYSTEM)");
+
+        if (v_partitions.size() > 1)
+            throwException("Only one partition allowed (-part).");
+
+        if (is_in(nx_input.type, {RAWNAND, RAWMMC}) && v_partitions.size() != 1)
+            throwException("Partition's name is missing (-part). Specify SYSTEM or USER.");
+
+        NxPartition *in_part;
+        if (is_in(nx_input.type, {RAWNAND, RAWMMC}))
+            in_part = nx_input.getNxPartition(v_partitions.at(0));
+        else
+            in_part = nx_input.getNxPartition(nx_input.type);
+
+        if (!in_part)
+            throwException(ERR_IN_PART_NOT_FOUND);
+
+        if (not_in(in_part->type(), {SYSTEM, USER}))
+            throwException("Only SYSTEM or USER partitions can be formatted");
+
+        if (in_part->isEncryptedPartition() && in_part->badCrypto())
+            throwException(ERROR_DECRYPT_FAILED);
+
+        printf("Formatting %s partition to FAT32...\n", in_part->partitionName().c_str());
+
+        if (!FORCE && !AskYesNoQuestion("All data on this partition will be erased. Are you sure you want to continue?"))
+            throwException("Operation cancelled");
+
+        int res = in_part->formatPartition();
+        if (res != SUCCESS)
+            throwException(res);
+
+        printf("Partition formatted successfully!\n");
+        exit(EXIT_SUCCESS);
+    }
 
     if (createEmuNAND && nullptr == output)
     {
