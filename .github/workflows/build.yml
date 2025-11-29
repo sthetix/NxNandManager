@@ -41,6 +41,10 @@ jobs:
           # Disable GUI
           sed -i 's/#define ENABLE_GUI  1/#define ENABLE_GUI  0/' gui/gui.h
 
+          # Fix header checks to check VALUE not just defined
+          sed -i 's/#if defined(ENABLE_GUI)/#if defined(ENABLE_GUI) \&\& ENABLE_GUI/' NxNandManager.h
+          find . -name "*.h" -exec sed -i 's/#if defined(ENABLE_GUI)/#if defined(ENABLE_GUI) \&\& ENABLE_GUI/g' {} \;
+
           # Add stub to compilation
           echo "Building CLI version..."
           g++ -c -std=c++11 -fexceptions -DUNICODE -D_UNICODE -fPIC -fpermissive gui_stub.cpp -o gui_stub.o
@@ -52,8 +56,9 @@ jobs:
           # Link with stub
           g++ -o NxNandManager.exe *.o gui_stub.o res/*.o virtual_fs/*.o lib/ZipLib/*.o lib/ZipLib/detail/*.o lib/ZipLib/extlibs/zlib/*.o lib/ZipLib/extlibs/lzma/*.o lib/ZipLib/extlibs/bzip2/*.o lib/fatfs/*.o -static -lcrypto -lcrypt32 -lwsock32 -lws2_32 -Lvirtual_fs/dokan/x64/lib -ldokan1 -Llib/openssl/lib 2>&1 | head -50 || true
 
-          # Restore GUI setting
+          # Restore GUI setting and header checks
           sed -i 's/#define ENABLE_GUI  0/#define ENABLE_GUI  1/' gui/gui.h
+          find . -name "*.h" -exec sed -i 's/#if defined(ENABLE_GUI) \&\& ENABLE_GUI/#if defined(ENABLE_GUI)/g' {} \;
 
           # Create CLI output directory
           mkdir -p $GITHUB_WORKSPACE/bin-cli
