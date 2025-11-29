@@ -85,7 +85,8 @@ jobs:
           cd ~/NxNandManager/NxNandManager/gui
 
           echo "Running qmake..."
-          $QMAKE_PATH NxNandManager.pro 'CONFIG += STATIC ARCH64'
+          # Override OPENSSL_LIB_PATH to point to the correct location in MSYS2
+          $QMAKE_PATH NxNandManager.pro 'CONFIG += STATIC ARCH64' 'OPENSSL_LIB_PATH=/mingw64'
 
           echo "Generated Makefile content (first 50 lines):"
           head -50 Makefile.Release 2>/dev/null || head -50 Makefile
