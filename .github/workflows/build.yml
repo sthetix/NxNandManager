@@ -22,6 +22,7 @@ jobs:
             mingw-w64-x86_64-qt5-base
             mingw-w64-x86_64-qt5-winextras
             mingw-w64-x86_64-qt5-static
+          update: true
 
       - name: Verify Qt5 installation
         shell: msys2 {0}
@@ -56,7 +57,7 @@ jobs:
           echo "Found Qt includes at: $QT_INCLUDE_DIR"
 
           # Add Qt include paths to Makefile temporarily
-          sed -i "s|INCLUDES=-Ivirtual_fs/dokan/include -Ilib/openssl/include|INCLUDES=-Ivirtual_fs/dokan/include -Ilib/openssl/include -I${QT_INCLUDE_DIR} -I${QT_INCLUDE_DIR}/QtCore -I${QT_INCLUDE_DIR}/QtGui -I${QT_INCLUDE_DIR}/QtWidgets -I${QT_INCLUDE_DIR}/QtWinExtras|" Makefile
+          sed -i "s|INCLUDES=-Ivirtual_fs/dokan/include -Ilib/openssl/include|INCLUDES=-Ivirtual_fs/dokan/include -Ilib/openssl/include -I${QT_INCLUDE_DIR} -I${QT_INCLUDE_DIR}/QtCore -I${QT_INCLUDE_DIR}/QtGui -I${QT_INCLUDE_DIR}/QtWidgets -I${QT_INCLUDE_DIR}/QtWinExtras -I${QT_INCLUDE_DIR}/QtNetwork|" Makefile
 
           # Build using Makefile
           make clean
