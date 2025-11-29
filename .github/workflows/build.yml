@@ -41,14 +41,15 @@ jobs:
           echo -e "\n=== All installed files from qt5-static package ==="
           pacman -Ql mingw-w64-x86_64-qt5-static 2>/dev/null | grep -E "(bin/qmake|include/qt)" | head -30 || echo "Cannot list qt5-static files"
 
-      - name: Build CLI (without GUI)
+      - name: Build CLI (Makefile-based)
         shell: msys2 {0}
         run: |
           cd NxNandManager
 
-          # Temporarily disable GUI for CLI build
-          sed -i 's/#define ENABLE_GUI  1/#define ENABLE_GUI  0/' gui/gui.h
+          # Add Qt include path for compilation (headers are needed even with ENABLE_GUI=0)
+          export CXXFLAGS="-std=c++11 -fexceptions -DUNICODE -D_UNICODE -fPIC -fpermissive -I/mingw64/include/qt5 -I/mingw64/include/qt5/QtCore -I/mingw64/include/qt5/QtGui -I/mingw64/include/qt5/QtWidgets"
 
+          # Build using Makefile
           make clean
           make -j"$(nproc)"
 
@@ -66,8 +67,11 @@ jobs:
             echo "No OpenSSL DLLs found in /mingw64/bin — skipping copy"
           fi
 
-          # Restore GUI setting
-          sed -i 's/#define ENABLE_GUI  0/#define ENABLE_GUI  1/' gui/gui.h
+          # Copy Qt5 DLLs if GUI is enabled
+          qt_dlls=(/mingw64/bin/Qt5Core.dll /mingw64/bin/Qt5Gui.dll /mingw64/bin/Qt5Widgets.dll)
+          if [ ${#qt_dlls[@]} -gt 0 ]; then
+            cp "${qt_dlls[@]}" "$GITHUB_WORKSPACE/bin-cli/" 2>/dev/null || true
+          fi
 
       - name: Build GUI (with Qt5)
         shell: msys2 {0}
