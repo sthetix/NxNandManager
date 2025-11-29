@@ -71,14 +71,42 @@ jobs:
       - name: Build GUI (with Qt5)
         shell: msys2 {0}
         run: |
+          # Find the actual qmake location
+          QMAKE_PATH=$(find /mingw64 -name "qmake.exe" 2>/dev/null | head -1)
+          if [ -z "$QMAKE_PATH" ]; then
+            echo "ERROR: qmake.exe not found!"
+            exit 1
+          fi
+          echo "Found qmake at: $QMAKE_PATH"
+          $QMAKE_PATH --version
+
+          # Build GUI
           ln -s $(pwd) ~/NxNandManager
           cd ~/NxNandManager/NxNandManager/gui
-          /mingw64/qt5-static/bin/qmake.exe NxNandManager.pro 'CONFIG += STATIC ARCH64'
+
+          echo "Running qmake..."
+          $QMAKE_PATH NxNandManager.pro 'CONFIG += STATIC ARCH64'
+
+          echo "Generated Makefile content (first 50 lines):"
+          head -50 Makefile.Release 2>/dev/null || head -50 Makefile
+
+          echo "Building..."
           make -j"$(nproc)"
 
           # Create GUI output directory
           mkdir -p "$GITHUB_WORKSPACE/bin-gui"
-          cp release/NxNandManager.exe "$GITHUB_WORKSPACE/bin-gui/"
+
+          # Find the built executable
+          if [ -f release/NxNandManager.exe ]; then
+            cp release/NxNandManager.exe "$GITHUB_WORKSPACE/bin-gui/"
+          elif [ -f NxNandManager.exe ]; then
+            cp NxNandManager.exe "$GITHUB_WORKSPACE/bin-gui/"
+          else
+            echo "ERROR: NxNandManager.exe not found!"
+            ls -la
+            exit 1
+          fi
+
           cp ../virtual_fs/dokan/x64/dokan1.dll "$GITHUB_WORKSPACE/bin-gui/"
 
       - uses: actions/upload-artifact@v4
