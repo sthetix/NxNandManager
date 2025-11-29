@@ -22,32 +22,40 @@ jobs:
             mingw-w64-x86_64-qt5
             mingw-w64-x86_64-qt5-static
 
-      - name: Verify Qt5-static installation
+      - name: Verify Qt5 installation
         shell: msys2 {0}
         run: |
-          echo "=== Checking Qt5-static installation ==="
+          echo "=== Checking Qt5 installation ==="
           pacman -Q | grep qt5 || echo "No qt5 packages found"
 
-          echo -e "\n=== Searching for qmake ==="
-          find /mingw64 -name "qmake.exe" 2>/dev/null || echo "qmake.exe not found anywhere in /mingw64"
+          echo -e "\n=== Searching for Qt include directories ==="
+          find /mingw64 -type d -name "QtWidgets" 2>/dev/null || echo "QtWidgets directory not found"
+          find /mingw64 -type d -name "QtCore" 2>/dev/null || echo "QtCore directory not found"
 
-          echo -e "\n=== Checking common Qt locations ==="
-          ls -la /mingw64/qt5-static/ 2>/dev/null || echo "/mingw64/qt5-static/ not found"
-          ls -la /mingw64/bin/qmake* 2>/dev/null || echo "No qmake in /mingw64/bin/"
+          echo -e "\n=== Checking for QMainWindow header ==="
+          find /mingw64 -name "QMainWindow" -o -name "qmainwindow.h" 2>/dev/null || echo "QMainWindow header not found"
 
-          echo -e "\n=== Checking for Qt includes ==="
-          find /mingw64 -type d -name "QtWidgets" 2>/dev/null | head -5 || echo "QtWidgets directory not found"
+          echo -e "\n=== Listing Qt5 include directories ==="
+          ls -la /mingw64/include/ 2>/dev/null | grep -i qt || echo "No Qt directories in /mingw64/include/"
 
-          echo -e "\n=== All installed files from qt5-static package ==="
-          pacman -Ql mingw-w64-x86_64-qt5-static 2>/dev/null | grep -E "(bin/qmake|include/qt)" | head -30 || echo "Cannot list qt5-static files"
+          echo -e "\n=== Checking qt5 package files ==="
+          pacman -Ql mingw-w64-x86_64-qt5 2>/dev/null | grep "include.*QtWidgets" | head -10 || echo "Cannot list qt5 include files"
 
       - name: Build CLI (Makefile-based)
         shell: msys2 {0}
         run: |
           cd NxNandManager
 
+          # Find actual Qt include path
+          QT_INCLUDE_DIR=$(find /mingw64 -type d -name "QtCore" 2>/dev/null | head -1 | xargs dirname)
+          if [ -z "$QT_INCLUDE_DIR" ]; then
+            echo "ERROR: Qt include directory not found!"
+            exit 1
+          fi
+          echo "Found Qt includes at: $QT_INCLUDE_DIR"
+
           # Add Qt include paths to Makefile temporarily
-          sed -i 's|INCLUDES=-Ivirtual_fs/dokan/include -Ilib/openssl/include|INCLUDES=-Ivirtual_fs/dokan/include -Ilib/openssl/include -I/mingw64/include/qt5 -I/mingw64/include/qt5/QtCore -I/mingw64/include/qt5/QtGui -I/mingw64/include/qt5/QtWidgets|' Makefile
+          sed -i "s|INCLUDES=-Ivirtual_fs/dokan/include -Ilib/openssl/include|INCLUDES=-Ivirtual_fs/dokan/include -Ilib/openssl/include -I${QT_INCLUDE_DIR} -I${QT_INCLUDE_DIR}/QtCore -I${QT_INCLUDE_DIR}/QtGui -I${QT_INCLUDE_DIR}/QtWidgets|" Makefile
 
           # Build using Makefile
           make clean
