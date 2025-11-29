@@ -19,7 +19,8 @@ jobs:
             base-devel
             mingw-w64-x86_64-toolchain
             mingw-w64-x86_64-openssl
-            mingw-w64-x86_64-qt5
+            mingw-w64-x86_64-qt5-base
+            mingw-w64-x86_64-qt5-tools
 
       - name: Build CLI (without GUI)
         shell: msys2 {0}
@@ -49,6 +50,17 @@ jobs:
           # Restore GUI setting
           sed -i 's/#define ENABLE_GUI  0/#define ENABLE_GUI  1/' gui/gui.h
 
+      - name: Verify Qt5 installation
+        shell: msys2 {0}
+        run: |
+          echo "Checking Qt5 installation..."
+          ls -la /mingw64/include/ | grep -i qt || echo "No qt directories found in /mingw64/include/"
+          ls -la /mingw64/include/qt5/ 2>/dev/null || echo "Qt5 include directory not found"
+          ls -la /mingw64/lib/ | grep -i qt || echo "No Qt libraries found"
+          pkg-config --modversion Qt5Core 2>/dev/null || echo "Qt5Core not found via pkg-config"
+          pkg-config --cflags Qt5Core Qt5Gui Qt5Widgets 2>/dev/null || echo "Cannot get Qt5 cflags"
+          pkg-config --libs Qt5Core Qt5Gui Qt5Widgets 2>/dev/null || echo "Cannot get Qt5 libs"
+
       - name: Build GUI (with Qt5)
         shell: msys2 {0}
         run: |
@@ -57,9 +69,13 @@ jobs:
           # Ensure GUI is enabled
           sed -i 's/#define ENABLE_GUI  0/#define ENABLE_GUI  1/' gui/gui.h
 
+          # Get Qt5 flags from pkg-config
+          QT_CFLAGS=$(pkg-config --cflags Qt5Core Qt5Gui Qt5Widgets)
+          QT_LIBS=$(pkg-config --libs Qt5Core Qt5Gui Qt5Widgets)
+
           # Update Makefile to include Qt paths and libs for GUI build
-          sed -i 's|^CXXFLAGS=.*|CXXFLAGS=-std=c++11 -fexceptions -DUNICODE -D_UNICODE -fPIC -fpermissive -I/mingw64/include/qt5 -I/mingw64/include/qt5/QtCore -I/mingw64/include/qt5/QtGui -I/mingw64/include/qt5/QtWidgets|' Makefile
-          sed -i 's|^LIBS=.*|LIBS=-static -lcrypto -lcrypt32 -lwsock32 -lws2_32 -Lvirtual_fs/dokan/x64/lib -ldokan1 -Llib/openssl/lib -L/mingw64/lib -lQt5Widgets -lQt5Gui -lQt5Core|' Makefile
+          sed -i "s|^CXXFLAGS=.*|CXXFLAGS=-std=c++11 -fexceptions -DUNICODE -D_UNICODE -fPIC -fpermissive $QT_CFLAGS|" Makefile
+          sed -i "s|^LIBS=.*|LIBS=-static -lcrypto -lcrypt32 -lwsock32 -lws2_32 -Lvirtual_fs/dokan/x64/lib -ldokan1 -Llib/openssl/lib $QT_LIBS|" Makefile
 
           make clean
           make -j"$(nproc)"
