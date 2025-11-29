@@ -213,10 +213,11 @@ int NxPartition::dump(NxHandle *outHandle, part_params_t par, void(*updateProgre
     {
         pi.mode = COPY;
         strcpy_s(pi.storage_name, m_name);
-        pi.begin_time = std::chrono::system_clock::now();        
+        pi.begin_time = std::chrono::system_clock::now();
+        pi.last_update_time = pi.begin_time;
         if (par.isSubParam) pi.isSubProgressInfo = true;
         updateProgress(pi);
-    }    
+    }
 
     // Copy
     u32 num_cluster = 0, cl_count = 0;
@@ -252,8 +253,17 @@ int NxPartition::dump(NxHandle *outHandle, part_params_t par, void(*updateProgre
         if (buff_size == CLUSTER_SIZE)
             num_cluster++;
 
+        // Throttle progress updates to every 100ms for better performance
         if (sendProgress)
-            updateProgress(pi);
+        {
+            auto now = std::chrono::system_clock::now();
+            auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - pi.last_update_time).count();
+            if (elapsed_ms >= PROGRESS_UPDATE_INTERVAL_MS || pi.bytesCount >= pi.bytesTotal)
+            {
+                pi.last_update_time = now;
+                updateProgress(pi);
+            }
+        }
     }
 
     // Check completeness

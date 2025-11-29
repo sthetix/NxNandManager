@@ -10,6 +10,7 @@ struct ProgressInfo {
     int mode;
     bool show = true;
     timepoint_t begin_time;
+    timepoint_t last_update_time;
     int elapsed_seconds = 0;
     char storage_name[256];
     u64 bytesCount = 0;
