@@ -18,7 +18,17 @@ jobs:
           install: >-
             base-devel
             mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-openssl
             mingw64/mingw-w64-x86_64-qt5-static
+
+      - name: Verify Qt5-static installation
+        shell: msys2 {0}
+        run: |
+          echo "Checking if qt5-static is installed..."
+          pacman -Q | grep qt5 || echo "No qt5 packages found"
+          echo "Checking for qmake..."
+          ls -la /mingw64/qt5-static/bin/qmake.exe 2>/dev/null || echo "qmake not found in /mingw64/qt5-static/bin/"
+          ls -la /mingw64/qt5-static/include/ 2>/dev/null | head -20 || echo "qt5-static include directory not found"
 
       - name: Build CLI (without GUI)
         shell: msys2 {0}
