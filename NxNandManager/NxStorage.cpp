@@ -349,14 +349,14 @@ void NxStorage::constructor(const wstring &storage)
             {
                 bool isBoot0 = false;
                 // Check Erista BOOT0 BCT at 0x530
-                if (nxHandle->read(0x530 - (0x530 % NX_BLOCKSIZE), buff, &bytesRead, NX_BLOCKSIZE)) {
+                if (nxHandle->read(static_cast<u32>(0x530 - (0x530 % NX_BLOCKSIZE)), buff, &bytesRead, NX_BLOCKSIZE)) {
                     int remain = 0x530 % NX_BLOCKSIZE;
                     if (hexStr(&buff[remain], 12) == "010021000E00000009000000") {
                         isBoot0 = true;
                     }
                 }
                 // Check Mariko BOOT0 BCT at 0x2330
-                if (!isBoot0 && nxHandle->read(0x2330 - (0x2330 % NX_BLOCKSIZE), buff, &bytesRead, NX_BLOCKSIZE)) {
+                if (!isBoot0 && nxHandle->read(static_cast<u32>(0x2330 - (0x2330 % NX_BLOCKSIZE)), buff, &bytesRead, NX_BLOCKSIZE)) {
                     int remain = 0x2330 % NX_BLOCKSIZE;
                     if (hexStr(&buff[remain], 12) == "B1D7EF7EA4EE00B1EA84F8CF") {
                         isBoot0 = true;
