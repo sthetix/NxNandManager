@@ -18,130 +18,20 @@ jobs:
           install: >-
             base-devel
             mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-openssl
-            mingw-w64-x86_64-qt5-base
-            mingw-w64-x86_64-qt5-winextras
-            mingw-w64-x86_64-qt5-static
-          update: true
+            mingw64/mingw-w64-x86_64-qt5-static
 
-      - name: Verify Qt5 installation
+      - name: Build GUI
         shell: msys2 {0}
         run: |
-          echo "=== Checking Qt5 installation ==="
-          pacman -Q | grep qt5 || echo "No qt5 packages found"
-
-          echo -e "\n=== Searching for Qt include directories ==="
-          find /mingw64 -type d -name "QtWidgets" 2>/dev/null || echo "QtWidgets directory not found"
-          find /mingw64 -type d -name "QtCore" 2>/dev/null || echo "QtCore directory not found"
-
-          echo -e "\n=== Checking for QMainWindow header ==="
-          find /mingw64 -name "QMainWindow" -o -name "qmainwindow.h" 2>/dev/null || echo "QMainWindow header not found"
-
-          echo -e "\n=== Listing Qt5 include directories ==="
-          ls -la /mingw64/include/ 2>/dev/null | grep -i qt || echo "No Qt directories in /mingw64/include/"
-
-          echo -e "\n=== Checking qt5 package files ==="
-          pacman -Ql mingw-w64-x86_64-qt5 2>/dev/null | grep "include.*QtWidgets" | head -10 || echo "Cannot list qt5 include files"
-
-      - name: Build CLI (Makefile-based)
-        shell: msys2 {0}
-        run: |
-          cd NxNandManager
-
-          # Find actual Qt include path
-          QT_INCLUDE_DIR=$(find /mingw64 -type d -name "QtCore" 2>/dev/null | head -1 | xargs dirname)
-          if [ -z "$QT_INCLUDE_DIR" ]; then
-            echo "ERROR: Qt include directory not found!"
-            exit 1
-          fi
-          echo "Found Qt includes at: $QT_INCLUDE_DIR"
-
-          # Check what Qt libraries are available
-          echo "=== Checking available Qt libraries ==="
-          ls -la /mingw64/lib/libQt5*.a 2>/dev/null || echo "No static Qt libraries found"
-          ls -la /mingw64/lib/libQt5*.dll.a 2>/dev/null | head -10 || echo "No Qt import libraries found"
-
-          # Add Qt include paths to Makefile temporarily
-          sed -i "s|INCLUDES=-Ivirtual_fs/dokan/include -Ilib/openssl/include|INCLUDES=-Ivirtual_fs/dokan/include -Ilib/openssl/include -I${QT_INCLUDE_DIR} -I${QT_INCLUDE_DIR}/QtCore -I${QT_INCLUDE_DIR}/QtGui -I${QT_INCLUDE_DIR}/QtWidgets -I${QT_INCLUDE_DIR}/QtWinExtras -I${QT_INCLUDE_DIR}/QtNetwork|" Makefile
-
-          # Remove -static flag and add Qt libraries for dynamic linking
-          sed -i 's|LIBS=-static -lcrypto|LIBS=-L/mingw64/lib -lQt5Core -lQt5Gui -lQt5Widgets -lQt5WinExtras -lQt5Network -lcrypto|' Makefile
-
-          # Build using Makefile
-          make clean
-          make -j"$(nproc)"
-
-          # Restore Makefile
-          git checkout Makefile
-
-          # Create CLI output directory
-          mkdir -p "$GITHUB_WORKSPACE/bin-cli"
-          cp NxNandManager.exe "$GITHUB_WORKSPACE/bin-cli/"
-          cp virtual_fs/dokan/x64/dokan1.dll "$GITHUB_WORKSPACE/bin-cli/"
-
-          # Copy OpenSSL DLLs
-          shopt -s nullglob
-          openssl_dlls=(/mingw64/bin/libcrypto*.dll /mingw64/bin/libssl*.dll)
-          if [ ${#openssl_dlls[@]} -gt 0 ]; then
-            cp "${openssl_dlls[@]}" "$GITHUB_WORKSPACE/bin-cli/" || true
-          else
-            echo "No OpenSSL DLLs found in /mingw64/bin — skipping copy"
-          fi
-
-          # Copy Qt5 DLLs if GUI is enabled
-          qt_dlls=(/mingw64/bin/Qt5Core.dll /mingw64/bin/Qt5Gui.dll /mingw64/bin/Qt5Widgets.dll)
-          if [ ${#qt_dlls[@]} -gt 0 ]; then
-            cp "${qt_dlls[@]}" "$GITHUB_WORKSPACE/bin-cli/" 2>/dev/null || true
-          fi
-
-      - name: Build GUI (with Qt5)
-        shell: msys2 {0}
-        run: |
-          # Find the actual qmake location
-          QMAKE_PATH=$(find /mingw64 -name "qmake.exe" 2>/dev/null | head -1)
-          if [ -z "$QMAKE_PATH" ]; then
-            echo "ERROR: qmake.exe not found!"
-            exit 1
-          fi
-          echo "Found qmake at: $QMAKE_PATH"
-          $QMAKE_PATH --version
-
-          # Build GUI
           ln -s $(pwd) ~/NxNandManager
           cd ~/NxNandManager/NxNandManager/gui
-
-          echo "Running qmake..."
-          # Override OPENSSL_LIB_PATH to point to the correct location in MSYS2
-          $QMAKE_PATH NxNandManager.pro 'CONFIG += STATIC ARCH64' 'OPENSSL_LIB_PATH=/mingw64'
-
-          echo "Generated Makefile content (first 50 lines):"
-          head -50 Makefile.Release 2>/dev/null || head -50 Makefile
-
-          echo "Building..."
+          /mingw64/qt5-static/bin/qmake.exe NxNandManager.pro 'CONFIG += STATIC ARCH64'
           make -j"$(nproc)"
-
-          # Create GUI output directory
-          mkdir -p "$GITHUB_WORKSPACE/bin-gui"
-
-          # Find the built executable
-          if [ -f release/NxNandManager.exe ]; then
-            cp release/NxNandManager.exe "$GITHUB_WORKSPACE/bin-gui/"
-          elif [ -f NxNandManager.exe ]; then
-            cp NxNandManager.exe "$GITHUB_WORKSPACE/bin-gui/"
-          else
-            echo "ERROR: NxNandManager.exe not found!"
-            ls -la
-            exit 1
-          fi
-
-          cp ../virtual_fs/dokan/x64/dokan1.dll "$GITHUB_WORKSPACE/bin-gui/"
+          mkdir -p $GITHUB_WORKSPACE/bin
+          cp release/NxNandManager.exe $GITHUB_WORKSPACE/bin
+          cp ../virtual_fs/dokan/x64/dokan1.dll $GITHUB_WORKSPACE/bin
 
       - uses: actions/upload-artifact@v4
         with:
-          name: NxNandManager-CLI
-          path: bin-cli/*
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: NxNandManager-GUI
-          path: bin-gui/*
+          name: NxNandManager
+          path: bin/*
