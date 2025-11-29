@@ -18,7 +18,7 @@
 #define __types_h__
 
 #define NX_BLOCKSIZE 0x200 // 512 b
-#define CLUSTER_SIZE 0x10000 // 64 Kb (increased from 16 KB for better performance)
+#define CLUSTER_SIZE 0x4000 // 16 Kb (reverted from 64 KB - caused FAT32 mounting issues)
 #define DEFAULT_BUFF_SIZE 0x800000 // 8 Mb (increased from 4 MB for better performance)
 #define PROGRESS_UPDATE_INTERVAL_MS 100 // Update progress UI every 100ms for smoother performance
 #define FAT32_FILESIZE_LIMIT 0x100000000‬ // 4Gb
