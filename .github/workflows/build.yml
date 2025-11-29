@@ -46,12 +46,15 @@ jobs:
         run: |
           cd NxNandManager
 
-          # Add Qt include path for compilation (headers are needed even with ENABLE_GUI=0)
-          export CXXFLAGS="-std=c++11 -fexceptions -DUNICODE -D_UNICODE -fPIC -fpermissive -I/mingw64/include/qt5 -I/mingw64/include/qt5/QtCore -I/mingw64/include/qt5/QtGui -I/mingw64/include/qt5/QtWidgets"
+          # Add Qt include paths to Makefile temporarily
+          sed -i 's|INCLUDES=-Ivirtual_fs/dokan/include -Ilib/openssl/include|INCLUDES=-Ivirtual_fs/dokan/include -Ilib/openssl/include -I/mingw64/include/qt5 -I/mingw64/include/qt5/QtCore -I/mingw64/include/qt5/QtGui -I/mingw64/include/qt5/QtWidgets|' Makefile
 
           # Build using Makefile
           make clean
           make -j"$(nproc)"
+
+          # Restore Makefile
+          git checkout Makefile
 
           # Create CLI output directory
           mkdir -p "$GITHUB_WORKSPACE/bin-cli"
