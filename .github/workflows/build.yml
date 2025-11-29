@@ -19,7 +19,7 @@ jobs:
             base-devel
             mingw-w64-x86_64-toolchain
             mingw-w64-x86_64-openssl
-            mingw64/mingw-w64-x86_64-qt5-static
+            mingw-w64-x86_64-qt5-static
 
       - name: Verify Qt5-static installation
         shell: msys2 {0}
