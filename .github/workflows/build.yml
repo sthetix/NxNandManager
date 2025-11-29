@@ -15,13 +15,10 @@ jobs:
       - uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          update: true
           install: >-
             base-devel
             mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-openssl
-            mingw-w64-x86_64-qt5-static
-            mingw-w64-x86_64-pkg-config
+            mingw64/mingw-w64-x86_64-qt5-static
 
       - name: Build CLI (without GUI)
         shell: msys2 {0}
@@ -51,92 +48,18 @@ jobs:
           # Restore GUI setting
           sed -i 's/#define ENABLE_GUI  0/#define ENABLE_GUI  1/' gui/gui.h
 
-      - name: Verify Qt5 installation
-        shell: msys2 {0}
-        run: |
-          echo "=== Checking Qt5 installation ==="
-          echo "Qt directories in /mingw64/include/:"
-          ls -la /mingw64/include/ | grep -i qt || echo "No qt directories found"
-
-          echo -e "\nSearching for Qt headers:"
-          find /mingw64/include -type f -name "qmainwindow.h" 2>/dev/null || echo "qmainwindow.h not found"
-          find /mingw64/include -type f -name "qdialog.h" 2>/dev/null || echo "qdialog.h not found"
-
-          echo -e "\nQt include directory structure:"
-          ls -R /mingw64/include/qt* 2>/dev/null | head -50 || echo "No qt* directories"
-
-          echo -e "\nQt libraries:"
-          ls -la /mingw64/lib/libQt* 2>/dev/null | head -20 || echo "No Qt libraries found"
-
-          echo -e "\nqmake version:"
-          qmake-qt5 --version 2>/dev/null || qmake --version 2>/dev/null || echo "qmake not found"
-
-          echo -e "\npkg-config files:"
-          ls -la /mingw64/lib/pkgconfig/*Qt* 2>/dev/null || echo "No Qt pkg-config files"
-
-          echo -e "\nPackages installed:"
-          pacman -Q | grep qt5 || echo "No qt5 packages found"
-
       - name: Build GUI (with Qt5)
         shell: msys2 {0}
         run: |
-          cd NxNandManager
-
-          # Ensure GUI is enabled
-          sed -i 's/#define ENABLE_GUI  0/#define ENABLE_GUI  1/' gui/gui.h
-
-          # Detect Qt5 installation path
-          QT_DIR=""
-          if [ -d "/mingw64/qt5-static" ]; then
-            QT_DIR="/mingw64/qt5-static"
-          elif [ -d "/mingw64/include/qt5" ]; then
-            QT_DIR="/mingw64"
-          fi
-
-          echo "Qt directory: $QT_DIR"
-
-          # Try to get Qt flags from pkg-config with multiple fallbacks
-          if pkg-config --exists Qt5Core Qt5Gui Qt5Widgets 2>/dev/null; then
-            echo "Using pkg-config for Qt5..."
-            QT_CFLAGS=$(pkg-config --cflags Qt5Core Qt5Gui Qt5Widgets)
-            QT_LIBS=$(pkg-config --libs Qt5Core Qt5Gui Qt5Widgets)
-          elif [ -d "$QT_DIR/include/qt5" ]; then
-            echo "Using detected Qt5 static installation at $QT_DIR..."
-            QT_CFLAGS="-I$QT_DIR/include/qt5 -I$QT_DIR/include/qt5/QtCore -I$QT_DIR/include/qt5/QtGui -I$QT_DIR/include/qt5/QtWidgets"
-            QT_LIBS="-L$QT_DIR/lib -lQt5Widgets -lQt5Gui -lQt5Core -lqtharfbuzz -lqtfreetype -lqtlibpng -lqtpcre2 -lz -ldwmapi -luxtheme -lgdi32 -limm32 -lole32 -loleaut32 -lwinmm -luuid"
-          else
-            echo "ERROR: Cannot find Qt5 installation!"
-            exit 1
-          fi
-
-          echo "Qt CFLAGS: $QT_CFLAGS"
-          echo "Qt LIBS: $QT_LIBS"
-
-          # Update Makefile to include Qt paths and libs for GUI build
-          sed -i "s|^CXXFLAGS=.*|CXXFLAGS=-std=c++11 -fexceptions -DUNICODE -D_UNICODE -fPIC -fpermissive $QT_CFLAGS|" Makefile
-          sed -i "s|^LIBS=.*|LIBS=-static -lcrypto -lcrypt32 -lwsock32 -lws2_32 -Lvirtual_fs/dokan/x64/lib -ldokan1 -Llib/openssl/lib $QT_LIBS|" Makefile
-
-          echo "Updated Makefile CXXFLAGS and LIBS:"
-          grep "^CXXFLAGS=" Makefile
-          grep "^LIBS=" Makefile
-
-          make clean
+          ln -s $(pwd) ~/NxNandManager
+          cd ~/NxNandManager/NxNandManager/gui
+          /mingw64/qt5-static/bin/qmake.exe NxNandManager.pro 'CONFIG += STATIC ARCH64'
           make -j"$(nproc)"
 
           # Create GUI output directory
           mkdir -p "$GITHUB_WORKSPACE/bin-gui"
-          cp NxNandManager.exe "$GITHUB_WORKSPACE/bin-gui/"
-          cp virtual_fs/dokan/x64/dokan1.dll "$GITHUB_WORKSPACE/bin-gui/"
-
-          # Copy OpenSSL DLLs
-          shopt -s nullglob
-          openssl_dlls=(/mingw64/bin/libcrypto*.dll /mingw64/bin/libssl*.dll)
-          if [ ${#openssl_dlls[@]} -gt 0 ]; then
-            cp "${openssl_dlls[@]}" "$GITHUB_WORKSPACE/bin-gui/" || true
-          fi
-
-          # Note: Using static Qt5 build, so no Qt DLLs needed
-          # Qt is statically linked into the executable
+          cp release/NxNandManager.exe "$GITHUB_WORKSPACE/bin-gui/"
+          cp ../virtual_fs/dokan/x64/dokan1.dll "$GITHUB_WORKSPACE/bin-gui/"
 
       - uses: actions/upload-artifact@v4
         with:
