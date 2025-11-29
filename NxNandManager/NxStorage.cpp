@@ -28,7 +28,9 @@ static MagicOffsets mgkOffArr[] =
     { 0x1800200, "4546492050415254", 8, EMMC_PART, 0}, // RAWMMC
     { 0x0530, "010021000E00000009000000", 12, BOOT0, 0}, // BOOT0 Erista (boot_data_version + block_size_log2 + page_size_log2 at offset 0x530)
     { 0x0530, "584CB7CDC8A63184ABCD8671", 12, BOOT0, 0}, // BOOT0 Mariko/OLED (BCT has different values at offset 0x530)
-    // BOOT1 => Look for PK11 magic
+    { 0x0530, "A0606069A84360616069A843", 12, BOOT1, 0}, // BOOT1 Erista (BCT at offset 0x530)
+    { 0x0530, "222995A66AE9F39F2ACB1A4A", 12, BOOT1, 0}, // BOOT1 Mariko/OLED (BCT at offset 0x530)
+    // BOOT1 => Look for PK11 magic (for firmware-specific detection)
     { 0x13B4, "504B3131", 4, BOOT1, 1},
     { 0x13F0, "504B3131", 4, BOOT1, 2},
     { 0x1424, "504B3131", 4, BOOT1, 3},
