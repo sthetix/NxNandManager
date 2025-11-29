@@ -304,32 +304,37 @@ void NxStorage::constructor(const wstring &storage)
         }
     }
 
-    // Detect Mariko BOOT0 by size (0x180000 = 1.5MB)
-    if (type == UNKNOWN && m_size == 0x180000)
+    // Detect BOOT0/BOOT1 by size (0x400000 = 4MB) when magic not found (encrypted Mariko)
+    if (type == UNKNOWN && m_size == 0x400000)
     {
-        type = BOOT0;
-        isEristaBoot0 = false; // Mariko BOOT0
-        dbg_printf("NxStorage::NxStorage() - Mariko BOOT0 identified by size (0x180000)\n");
-    }
+        // Check filename to determine BOOT0 vs BOOT1
+        std::wstring basenameW = base_nameW(std::wstring(m_path));
+        std::string basename(basenameW.begin(), basenameW.end());
+        std::transform(basename.begin(), basename.end(), basename.begin(), ::toupper);
 
-    // Detect Mariko BOOT1 by size (0x200000 = 2MB)
-    if (type == UNKNOWN && m_size == 0x200000)
-    {
-        type = BOOT1;
-        dbg_printf("NxStorage::NxStorage() - Mariko BOOT1 identified by size (0x200000)\n");
-    }
-
-    // Find needle (PK11) in haystack (BOOT1) - works for both Erista and Mariko
-    if (type == UNKNOWN && m_size <= 0x400000)
-    {
-        nxHandle->initHandle();
-        while (nxHandle->read(buff, &bytesRead, NX_BLOCKSIZE))
+        if (basename.find("BOOT0") != std::string::npos)
         {
-            std::string haystack(buff, buff + NX_BLOCKSIZE);
-            if (haystack.find("PK11") != std::string::npos) {
-                type = BOOT1;
-                dbg_printf("NxStorage::NxStorage() - BOOT1 identified by looking for needle (PK11) in haystack (all file)\n");
-                break;
+            type = BOOT0;
+            isEristaBoot0 = false; // Assume Mariko if magic not found (encrypted)
+            dbg_printf("NxStorage::NxStorage() - BOOT0 identified by filename and size (0x400000, likely encrypted Mariko)\n");
+        }
+        else if (basename.find("BOOT1") != std::string::npos)
+        {
+            type = BOOT1;
+            dbg_printf("NxStorage::NxStorage() - BOOT1 identified by filename and size (0x400000, likely encrypted Mariko)\n");
+        }
+        else
+        {
+            // Try to detect by looking for PK11 in BOOT1
+            nxHandle->initHandle();
+            while (nxHandle->read(buff, &bytesRead, NX_BLOCKSIZE))
+            {
+                std::string haystack(buff, buff + NX_BLOCKSIZE);
+                if (haystack.find("PK11") != std::string::npos) {
+                    type = BOOT1;
+                    dbg_printf("NxStorage::NxStorage() - BOOT1 identified by PK11 needle in 4MB file\n");
+                    break;
+                }
             }
         }
     }
