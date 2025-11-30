@@ -192,7 +192,7 @@ int NxPartition::dump(NxHandle *outHandle, part_params_t par, void(*updateProgre
     // Set new buffer
     size_t buff_size = par.passThroughZero ? CLUSTER_SIZE : (size_t)nxHandle->getDefaultBuffSize();
     BYTE* buffer = new BYTE[buff_size];
-    memset(buffer, 0, buff_size);
+    // No initial memset needed - buffer gets filled by read() immediately
     DWORD bytesRead = 0, bytesWrite = 0;
 
     // Error lambda func
@@ -213,10 +213,10 @@ int NxPartition::dump(NxHandle *outHandle, part_params_t par, void(*updateProgre
     {
         pi.mode = COPY;
         strcpy_s(pi.storage_name, m_name);
-        pi.begin_time = std::chrono::system_clock::now();        
+        pi.begin_time = std::chrono::system_clock::now();
         if (par.isSubParam) pi.isSubProgressInfo = true;
         updateProgress(pi);
-    }    
+    }
 
     // Copy
     u32 num_cluster = 0, cl_count = 0;
@@ -386,7 +386,7 @@ int NxPartition::restore(NxStorage* input, part_params_t par, void(*updateProgre
     // Set new buffer
     int buff_size = input->nxHandle->getDefaultBuffSize();
     BYTE* buffer = new BYTE[buff_size];
-    memset(buffer, 0, (size_t)buff_size);
+    // No initial memset needed - buffer gets filled by read() immediately
     DWORD bytesRead = 0, bytesWrite = 0;
 
     // Init progress info
@@ -707,16 +707,26 @@ int NxPartition::mount_vfs(bool run, wchar_t driveLetter, VFSOptions options, vo
 {
     long res = SUCCESS;
 
+    dbg_printf("mount_vfs: START (this=%p, run=%d, driveLetter=%c, options=0x%x)\n", this, run, driveLetter, options);
+    dbg_printf("mount_vfs: Current state - m_vfs=%p, m_is_vfs_mounted=%d\n", m_vfs, m_is_vfs_mounted);
+
     if (is_vfs_mounted())
+    {
+        dbg_printf("mount_vfs: Already mounted, returning SUCCESS (BUG: should return error!)\n");
         return res;
+    }
 
     if ((res = mount_fs())) {
 #if defined(ENABLE_GUI)
         emit vfs_callback(res);
 #endif
+        dbg_printf("mount_vfs: mount_fs() failed with res=%d\n", res);
         return res;
     }
+
+    dbg_printf("mount_vfs: Creating new virtual_fs object...\n");
     m_vfs = new virtual_fs::virtual_fs(this);
+    dbg_printf("mount_vfs: Created m_vfs=%p\n", m_vfs);
 
     if (driveLetter)
         m_vfs->setDriveLetter(driveLetter);
@@ -769,16 +779,31 @@ wstring NxPartition::fs_prefix(const wchar_t* path) {
 
 void NxPartition::setVolumeMountPoint(WCHAR *mountPoint)
 {
+    dbg_wprintf(L"setVolumeMountPoint: START (this=%p, mountPoint=%s)\n", this, mountPoint ? mountPoint : L"NULL");
+    dbg_printf("setVolumeMountPoint: Before - m_vfs=%p, m_is_vfs_mounted=%d\n", m_vfs, m_is_vfs_mounted);
+
     m_is_vfs_mounted = mountPoint;
 
+    dbg_printf("setVolumeMountPoint: After assignment - m_is_vfs_mounted=%d (assigned from pointer %p)\n", m_is_vfs_mounted, mountPoint);
+
     if (mountPoint)
+    {
         m_mount_point[0] = mountPoint[0];
+        dbg_wprintf(L"setVolumeMountPoint: Mounted at %c:\n", mountPoint[0]);
+    }
     else {
-        m_vfs->fs_filenodes.get()->deleteNxFiles();
+        dbg_printf("setVolumeMountPoint: Unmounting - calling deleteNxFiles()\n");
+        if (m_vfs) {
+            m_vfs->fs_filenodes.get()->deleteNxFiles();
+            dbg_printf("setVolumeMountPoint: deleteNxFiles() completed\n");
+        } else {
+            dbg_printf("setVolumeMountPoint: ERROR - m_vfs is NULL, cannot call deleteNxFiles()!\n");
+        }
     }
 #if defined(ENABLE_GUI)
     emit mountPoint ? vfs_mounted_signal() : vfs_unmounted_signal();
 #endif
+    dbg_printf("setVolumeMountPoint: END\n");
 }
 
 wstring NxPartition::getVolumeMountPoint()

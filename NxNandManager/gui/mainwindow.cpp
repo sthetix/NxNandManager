@@ -1091,7 +1091,7 @@ void MainWindow::on_partition_table_itemSelectionChanged()
 
     if (selected_part->type() == BOOT0)
     {
-        addItem("Soc revision:", input->isEristaBoot0 ? "Erista" : "Unknown (Mariko ?)");
+        addItem("Soc revision:", input->isEristaBoot0 ? "Erista" : "Mariko");
         if (input->isEristaBoot0)
         {
             addItem("AutoRCM:", input->autoRcm ? "Enabled" : "Disabled");

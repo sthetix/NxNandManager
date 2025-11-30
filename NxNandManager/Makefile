@@ -3,8 +3,8 @@ CXX      = g++
 CXXFLAGS=-std=c++11 -fexceptions -DUNICODE -D_UNICODE -fPIC -fpermissive 
 CFLAGS= -fPIC -Wno-enum-conversion -O3
 EXEC_NAME=NxNandManager.exe
-INCLUDES=-Ivirtual_fs/dokan/include 
-LIBS=-static -lcrypto -lwsock32 -lws2_32 -Lvirtual_fs/dokan/x86/lib -ldokan1
+INCLUDES=-Ivirtual_fs/dokan/include -Ilib/openssl/include 
+LIBS=-static -lcrypto -lcrypt32 -lwsock32 -lws2_32 -Lvirtual_fs/dokan/x64/lib -ldokan1 -Llib/openssl/lib
 
 # Sources of external libraries
 SRC_ZLIB  = $(wildcard lib/ZipLib/extlibs/zlib/*.c)
@@ -37,6 +37,7 @@ clean :
 	-@rm -rf *.o
 	-@rm -rf gui/NxNandManager.tres
 	-@rm -rf res/*.o
+	-@rm -rf virtual_fs/*.o
 	-@rm -rf lib/ZipLib/*.o
 	-@rm -rf lib/ZipLib/detail/*.o
 	-@rm -rf lib/ZipLib/extlibs/zlib/*.o

@@ -76,7 +76,7 @@ Properties::Properties(NxStorage *in) :
     {
         ui->PropertiesTable->setRowCount(i+1);
         ui->PropertiesTable->setItem(i, 0, new QTableWidgetItem("SoC revision"));
-        ui->PropertiesTable->setItem(i, 1, new QTableWidgetItem(input->isEristaBoot0 ? "Erista" : "Unknown (Mariko ?)"));
+        ui->PropertiesTable->setItem(i, 1, new QTableWidgetItem(input->isEristaBoot0 ? "Erista" : "Mariko"));
         i++;
 
         if (input->isEristaBoot0)

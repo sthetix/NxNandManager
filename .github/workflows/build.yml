@@ -6,6 +6,7 @@ on:
   pull_request:
     branches: [ "master" ]
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: windows-latest
@@ -18,7 +19,8 @@ jobs:
             base-devel
             mingw-w64-x86_64-toolchain
             mingw64/mingw-w64-x86_64-qt5-static
-      - name: build
+
+      - name: Build
         shell: msys2 {0}
         run: |
           ln -s $(pwd) ~/NxNandManager
@@ -26,8 +28,9 @@ jobs:
           /mingw64/qt5-static/bin/qmake.exe NxNandManager.pro 'CONFIG += STATIC ARCH64'
           make -j"$(nproc)"
           mkdir -p $GITHUB_WORKSPACE/bin
-          cp release/NxNandManager.exe $GITHUB_WORKSPACE/bin
-          cp ../virtual_fs/dokan/x64/dokan1.dll $GITHUB_WORKSPACE/bin
+          cp release/NxNandManager.exe $GITHUB_WORKSPACE/bin/
+          cp ../virtual_fs/dokan/x64/dokan1.dll $GITHUB_WORKSPACE/bin/
+
       - uses: actions/upload-artifact@v4
         with:
           name: NxNandManager

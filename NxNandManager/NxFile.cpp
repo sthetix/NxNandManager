@@ -184,8 +184,12 @@ int NxFile::resize(u64 new_size, bool set_cursor_for_write)
     };
 
 
-    if (m_size == new_size && (!isNXA() || !set_cursor_for_write)) // Size unchanged
-        return exit(FR_OK);
+    // Early exit if size unchanged (unless we're at 4GB boundary and need to create new split file)
+    if (m_size == new_size) {
+        // Only proceed if we're at the 4GB boundary and need to create a new split file
+        if (!isNXA() || !set_cursor_for_write || m_files.empty() || m_files.back().size != 0xFFFF0000)
+            return exit(FR_OK);
+    }
 
     if (!isOpenAndValid())
         return exit(FR_NOT_READY);
@@ -211,6 +215,12 @@ int NxFile::resize(u64 new_size, bool set_cursor_for_write)
     }
 
     /// FILE IS NXA
+    // Safety check: if m_files is empty, cannot resize NXA
+    if (m_files.empty()) {
+        dbg_printf("ERROR: resize() called on NXA with empty m_files vector\n");
+        return exit(FR_INVALID_OBJECT);
+    }
+
     if (new_size < previous_size)
     {
         // size reduced, delete some nxa files if necessary
@@ -228,7 +238,7 @@ int NxFile::resize(u64 new_size, bool set_cursor_for_write)
         m_files.resize(next_idx); // resize vector
     }
 
-    auto new_split_file = [&](u32 size) {
+    auto new_split_file = [&](u64 size) {
         NxSplitOff f_entry;
         f_entry.off_start = m_files.back().off_start + m_files.back().size;
         f_entry.size = size;
@@ -338,6 +348,12 @@ bool NxFile::ensure_nxa_file(u64 offset, NxAccessMode mode)
     else if (!(m_options & VirtualizeNXA))
         return true;
 
+    // Safety check for empty m_files
+    if (m_files.empty()) {
+        dbg_printf("ERROR: ensure_nxa_file(%I64d) called with empty m_files\n", offset);
+        return false;
+    }
+
     if (!isValidOffset(offset)) // Offset is out of range
         return mode == NX_READONLY ? false : resize(offset, true) == FR_OK;
 
@@ -380,17 +396,40 @@ bool NxFile::open(BYTE mode)
 
     auto path = this->completePath();
     int res; bool nxa_init = false;
-    bool isCreateNew = !exists(); // File does not exists, creation mode
-    // Force appropriate flogs if not provided
+    bool isCreateNew = !exists(); // File does not exist, creation mode
+
+    // For NCA files with VirtualizeNXA, always handle CREATE_ALWAYS properly
+    // Windows CREATE_ALWAYS should delete existing file and create new one
+    bool is_nca_virtualized = (m_options & VirtualizeNXA) &&
+                              endsWith(m_filename, wstring(L".nca")) &&
+                              startsWith(m_filepath, wstring(L"/Contents"));
+
+    // For virtualized NCAs with CREATE_ALWAYS, always delete and recreate
+    // Don't check isCreateNew - file might exist from previous failed copy
+    bool truncate_existing = (mode & FA_CREATE_ALWAYS);
+
+    // Force appropriate flags if not provided
     if (isCreateNew && !(mode & (FA_CREATE_ALWAYS | FA_OPEN_ALWAYS | FA_CREATE_NEW)))
-        mode &= FA_CREATE_NEW;
+        mode |= FA_CREATE_NEW;
     if (isCreateNew && !(mode & FA_WRITE))
-        mode &= FA_WRITE;
-    bool truncate_existing = !isCreateNew && (mode & FA_CREATE_ALWAYS);
+        mode |= FA_WRITE;
 
     // NX ARCHIVE CREATION if filename matches *.nca & path starts with /Content
-    if (isCreateNew && (m_options & VirtualizeNXA) && endsWith(m_filename, wstring(L".nca")) && startsWith(m_filepath, wstring(L"/Contents")))
+    // Handle both creation (isCreateNew) and overwrite (truncate_existing) cases
+    bool should_create_nxa = (isCreateNew || truncate_existing) && (m_options & VirtualizeNXA) &&
+                             endsWith(m_filename, wstring(L".nca")) && startsWith(m_filepath, wstring(L"/Contents"));
+
+    if (should_create_nxa)
     {
+        // If path already exists, remove it recursively first (handles overwrite case)
+        FILINFO fno;
+        if (m_nxp->f_stat(path.c_str(), &fno) == FR_OK) {
+            // Path exists - attempt recursive delete
+            dbg_wprintf(L"NxFile::open() - Deleting existing NCA directory: %ls\n", path.c_str());
+            if (!delete_dir_recursive(path))
+                return exit(FR_DENIED);
+        }
+
         // Create new dir for NCA
         if ((res = m_nxp->f_mkdir(path.c_str())))
             return exit(res);
@@ -411,7 +450,7 @@ bool NxFile::open(BYTE mode)
         m_files.emplace_back(f_entry);
     }
 
-    if (isNXA())
+    if (isNXA() && !m_files.empty())
         path.append(L"/" + m_files.at(0).file);
 
     if (!(res = m_nxp->f_open(&m_fp, path.c_str(), mode)))
@@ -488,6 +527,52 @@ bool NxFile::seek(u64 offset, bool no_lock)
         return exit(resize(absoluteOffset()));
 
     return exit(res);
+}
+
+// Recursive delete helper used to remove existing NXA directories before creating a new one
+bool NxFile::delete_dir_recursive(const std::wstring &path)
+{
+    DIR dp;
+    FILINFO fno;
+
+    if (m_nxp->f_opendir(&dp, path.c_str()))
+        return false;
+
+    while (m_nxp->f_readdir(&dp, &fno) == FR_OK)
+    {
+        if (fno.fname[0] == '\0')
+            break;
+
+        // Skip special entries
+        if (!wcscmp(fno.fname, L".") || !wcscmp(fno.fname, L".."))
+            continue;
+
+        std::wstring child = path + L"/" + std::wstring(fno.fname);
+
+        // If entry is directory or NX archive, recurse
+        if (fno.fattrib == FILE_ATTRIBUTE_DIRECTORY || fno.fattrib == FILE_ATTRIBUTE_NX_ARCHIVE)
+        {
+            if (!delete_dir_recursive(child)) {
+                f_closedir(&dp);
+                return false;
+            }
+        }
+        else
+        {
+            if (m_nxp->f_unlink(child.c_str())) {
+                f_closedir(&dp);
+                return false;
+            }
+        }
+    }
+
+    f_closedir(&dp);
+
+    // Remove the directory itself
+    if (m_nxp->f_unlink(path.c_str()))
+        return false;
+
+    return true;
 }
 
 int NxFile::truncate()
@@ -652,9 +737,11 @@ int NxFile::remove()
     if (isNXA() && (m_options & VirtualizeNXA)) {
         std::lock_guard<std::mutex> lock(*_file_mutex);
         resize(0); // truncate ensures deletion of extra nxa's files
-        // Delete cur nxa file
-        if ((res =  m_nxp->f_unlink(wstring(completePath() + L"/" + m_files.at(0).file).c_str())))
-            return exit(res);
+        // Delete cur nxa file (only if m_files is not empty)
+        if (!m_files.empty()) {
+            if ((res =  m_nxp->f_unlink(wstring(completePath() + L"/" + m_files.at(0).file).c_str())))
+                return exit(res);
+        }
     }
     else close();
 
@@ -857,7 +944,7 @@ bool NxFile::setFileTime(const FILETIME* time)
 
     _file_mutex->unlock();
     if (is_open)
-        open(m_openMode);
+        open((m_openMode & ~(FA_CREATE_NEW | FA_CREATE_ALWAYS)) | FA_OPEN_EXISTING);
 
     return exit(true);
 }
@@ -887,7 +974,7 @@ bool NxFile::setFileAttr(const BYTE fattr)
 
     _file_mutex->unlock();
     if (is_open)
-        open(m_openMode);
+        open((m_openMode & ~(FA_CREATE_NEW | FA_CREATE_ALWAYS)) | FA_OPEN_EXISTING);
 
     return exit(true);
 }

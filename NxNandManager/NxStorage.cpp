@@ -19,25 +19,28 @@
 
 static MagicOffsets mgkOffArr[] =
 {
-    // { offset, magic, size, type, firmware }
-    { 0, "43414C30", 4, PRODINFO}, // PRODINFO ("CAL0" at offset 0x0)
-    { 0x680, "434552544946", 6, PRODINFOF}, // PRODINFOF ("CERTIF at offset 0x680")
-    { 0x200, "4546492050415254", 8, RAWNAND, 0 }, // RAWNAND ("EFI PART" at offset 0x200)
-    //{ 0x200, "54584E414E44", 6, TXNAND, 0}, // TX hidden partition ("TXNAND" at offset 0x200)
-    { 0x800200, "4546492050415254", 8, RAWMMC, 0}, // RAWMMC ("EFI PART" at offset 0x80000, i.e after 2 x 0x40000 for each BOOT)
-    { 0x1800200, "4546492050415254", 8, EMMC_PART, 0}, // RAWMMC
-    { 0x0530, "010021000E00000009000000", 12, BOOT0, 0}, // BOOT0 (boot_data_version + block_size_log2 + page_size_log2 at offset 0x530)
-    // BOOT1 => Look for PK11 magic
-    { 0x13B4, "504B3131", 4, BOOT1, 1},
-    { 0x13F0, "504B3131", 4, BOOT1, 2},
-    { 0x1424, "504B3131", 4, BOOT1, 3},
-    { 0x12E8, "504B3131", 4, BOOT1, 4},
-    { 0x12D0, "504B3131", 4, BOOT1, 5},
-    { 0x12F0, "504B3131", 4, BOOT1, 6},
-    { 0x40AF8,"504B3131", 4, BOOT1, 7},
-    { 0x40ADC,"504B3131", 4, BOOT1, 8},
-    { 0x40ACC,"504B3131", 4, BOOT1, 8.1}, /* 8.1.0 -> 13.1.0 */
-    { 0x40AC0,"504B3131", 4, BOOT1, 9} /* unknown */
+    // { offset, magic, size, type, firmware, isErista }
+    { 0, "43414C30", 4, PRODINFO, 0, false}, // PRODINFO ("CAL0" at offset 0x0)
+    { 0x680, "434552544946", 6, PRODINFOF, 0, false}, // PRODINFOF ("CERTIF at offset 0x680")
+    { 0x200, "4546492050415254", 8, RAWNAND, 0, false }, // RAWNAND ("EFI PART" at offset 0x200)
+    //{ 0x200, "54584E414E44", 6, TXNAND, 0, false}, // TX hidden partition ("TXNAND" at offset 0x200)
+    { 0x800200, "4546492050415254", 8, RAWMMC, 0, false}, // RAWMMC ("EFI PART" at offset 0x80000, i.e after 2 x 0x40000 for each BOOT)
+    { 0x1800200, "4546492050415254", 8, EMMC_PART, 0, false}, // RAWMMC
+    { 0x0530, "010021000E00000009000000", 12, BOOT0, 0, true}, // BOOT0 Erista (BCT at offset 0x530)
+    { 0x0530, "A0606069A84360616069A843", 12, BOOT1, 0, true}, // BOOT1 Erista (BCT at offset 0x530)
+    { 0x2330, "B1D7EF7EA4EE00B1EA84F8CF", 12, BOOT0, 0, false}, // BOOT0 Mariko/OLED (BCT at offset 0x2330)
+    { 0x2330, "A0606069A84360616069A843", 12, BOOT1, 0, false}, // BOOT1 Mariko/OLED (BCT at offset 0x2330)
+    // BOOT1 => Look for PK11 magic (for firmware-specific detection)
+    { 0x13B4, "504B3131", 4, BOOT1, 1, false},
+    { 0x13F0, "504B3131", 4, BOOT1, 2, false},
+    { 0x1424, "504B3131", 4, BOOT1, 3, false},
+    { 0x12E8, "504B3131", 4, BOOT1, 4, false},
+    { 0x12D0, "504B3131", 4, BOOT1, 5, false},
+    { 0x12F0, "504B3131", 4, BOOT1, 6, false},
+    { 0x40AF8,"504B3131", 4, BOOT1, 7, false},
+    { 0x40ADC,"504B3131", 4, BOOT1, 8, false},
+    { 0x40ACC,"504B3131", 4, BOOT1, 8.1, false}, /* 8.1.0 -> 13.1.0 */
+    { 0x40AC0,"504B3131", 4, BOOT1, 9, false} /* unknown */
 };
 
 
@@ -150,6 +153,7 @@ static NxSystemTitles systemTitlesArr[] = {
 // Title ID 010000000000081B (BootImagePackageExFat)
 static NxSystemTitles exFatTitlesArr[] = {
     { "21.0.1", "5d920340732acee21eda71743688d71a.nca"},
+    { "21.0.0", "5d920340732acee21eda71743688d71a.nca"},
     { "21.0.0", "5d920340732acee21eda71743688d71a.nca"},
     { "20.5.0", "793b767dc1ded58a9d1922df07bc0cd4.nca"},
     { "20.4.0", "793b767dc1ded58a9d1922df07bc0cd4.nca"},
@@ -294,26 +298,76 @@ void NxStorage::constructor(const wstring &storage)
         dbg_printf("NxStorage::NxStorage() - Looking for magic %s (%s) at offset %s\n", mgk.magic, hexStr_to_ascii(mgk.magic).c_str(), n2hexstr(mgk.offset, 10).c_str());
         int remain = mgk.offset % NX_BLOCKSIZE; // Block align
         if (nxHandle->read(mgk.offset - remain, buff, &bytesRead, NX_BLOCKSIZE) && hexStr(&buff[remain], mgk.size) == mgk.magic)
-        {            
+        {
             type = mgk.type;
-            if (type == BOOT0) isEristaBoot0 = true;
-            dbg_printf("NxStorage::NxStorage() - MAGIC found at offset %s, type is %s\n", 
-                n2hexstr(mgk.offset, 10).c_str(), getNxTypeAsStr());
+            if (type == BOOT0) isEristaBoot0 = mgk.isErista;
+            dbg_printf("NxStorage::NxStorage() - MAGIC found at offset %s, type is %s%s\n",
+                n2hexstr(mgk.offset, 10).c_str(), getNxTypeAsStr(),
+                (type == BOOT0) ? (mgk.isErista ? " (Erista)" : " (Mariko)") : "");
             break;
         }
     }
 
-    // Find needle (PK11) in haystack (BOOT1)
-    if (type == UNKNOWN && m_size <= 0x400000)
+    // Detect BOOT0/BOOT1 by size (0x400000 = 4MB) when magic not found (encrypted Mariko)
+    if (type == UNKNOWN && m_size == 0x400000)
     {
-        nxHandle->initHandle();
-        while (nxHandle->read(buff, &bytesRead, NX_BLOCKSIZE))
-        {        
-            std::string haystack(buff, buff + NX_BLOCKSIZE);
-            if (haystack.find("PK11") != std::string::npos) {
-                type = BOOT1;
-                dbg_printf("NxStorage::NxStorage() - BOOT1 identified by looking for needle (PK11) in haystack (all file)\n");
-                break;
+        // Check filename to determine BOOT0 vs BOOT1
+        std::wstring basenameW = base_nameW(std::wstring(m_path));
+        std::string basename(basenameW.begin(), basenameW.end());
+        std::transform(basename.begin(), basename.end(), basename.begin(), ::toupper);
+
+        if (basename.find("BOOT0") != std::string::npos)
+        {
+            type = BOOT0;
+            isEristaBoot0 = false; // Assume Mariko if magic not found (encrypted)
+            dbg_printf("NxStorage::NxStorage() - BOOT0 identified by filename and size (0x400000, likely encrypted Mariko)\n");
+        }
+        else if (basename.find("BOOT1") != std::string::npos)
+        {
+            type = BOOT1;
+            dbg_printf("NxStorage::NxStorage() - BOOT1 identified by filename and size (0x400000, likely encrypted Mariko)\n");
+        }
+        else
+        {
+            // For drives (e.g., mounted via Hekate), try to detect by scanning for PK11 or checking BCT patterns
+            // First, try to detect by looking for PK11 in BOOT1
+            bool foundPK11 = false;
+            nxHandle->initHandle();
+            while (nxHandle->read(buff, &bytesRead, NX_BLOCKSIZE))
+            {
+                std::string haystack(buff, buff + NX_BLOCKSIZE);
+                if (haystack.find("PK11") != std::string::npos) {
+                    type = BOOT1;
+                    foundPK11 = true;
+                    dbg_printf("NxStorage::NxStorage() - BOOT1 identified by PK11 needle in 4MB file\n");
+                    break;
+                }
+            }
+
+            // If PK11 not found, check if it's NOT BOOT0 by absence of BOOT0 BCT magic at 0x530 and 0x2330
+            if (!foundPK11)
+            {
+                bool isBoot0 = false;
+                // Check Erista BOOT0 BCT at 0x530
+                if (nxHandle->read(static_cast<u32>(0x530 - (0x530 % NX_BLOCKSIZE)), buff, &bytesRead, NX_BLOCKSIZE)) {
+                    int remain = 0x530 % NX_BLOCKSIZE;
+                    if (hexStr(&buff[remain], 12) == "010021000E00000009000000") {
+                        isBoot0 = true;
+                    }
+                }
+                // Check Mariko BOOT0 BCT at 0x2330
+                if (!isBoot0 && nxHandle->read(static_cast<u32>(0x2330 - (0x2330 % NX_BLOCKSIZE)), buff, &bytesRead, NX_BLOCKSIZE)) {
+                    int remain = 0x2330 % NX_BLOCKSIZE;
+                    if (hexStr(&buff[remain], 12) == "B1D7EF7EA4EE00B1EA84F8CF") {
+                        isBoot0 = true;
+                    }
+                }
+
+                // If it's 4MB and not BOOT0, assume it's BOOT1 (likely encrypted Mariko)
+                if (!isBoot0) {
+                    type = BOOT1;
+                    dbg_printf("NxStorage::NxStorage() - BOOT1 identified by size (0x400000) and absence of BOOT0 magic (likely encrypted Mariko)\n");
+                }
             }
         }
     }
@@ -616,7 +670,8 @@ void NxStorage::constructor(const wstring &storage)
                 int remain = mgk.offset % NX_BLOCKSIZE; // Block align
                 if (nxHandle->read(mgk.offset - remain, buff, &bytesRead, NX_BLOCKSIZE) && hexStr(&buff[remain], mgk.size) == mgk.magic)
                 {
-                    isEristaBoot0 = true;
+                    isEristaBoot0 = mgk.isErista;
+                    dbg_printf("NxStorage::NxStorage() - Secondary BOOT0 detection: %s\n", mgk.isErista ? "Erista" : "Mariko");
                     break;
                 }
             }

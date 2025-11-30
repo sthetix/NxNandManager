@@ -72,6 +72,12 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_createfile(LPCWSTR filename, PDOKAN_IO
     auto filename_str = std::wstring(filename);
     virtual_fs_helper::RemoveStreamType(filename_str);
 
+    static int createfile_call_count = 0;
+    createfile_call_count++;
+    if (createfile_call_count % 10 == 0) {
+        dbg_printf("CreateFile called %d times (latest: %S)\n", createfile_call_count, filename_str.c_str());
+    }
+
     auto f = filenodes->find(filename_str);
     auto stream_names = virtual_fs_helper::GetStreamNames(filename_str);
     auto nxp = filenodes->nx_part;
@@ -181,53 +187,155 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_createfile(LPCWSTR filename, PDOKAN_IO
 
         auto alloc_NxFile = [&](BYTE desiredAccess)
         {
-            NxFile *ffile = f ? f->get_nxfile() : nullptr;
-            NxFileFlag options = nxp->vfs()->virtualize_nxa ? VirtualizeNXA : SimpleFile;
-            NxFile *file = new NxFile(nxp, ffile ? ffile->completePath().c_str() : filename_str.c_str(), options);
-            if (!file->open(desiredAccess)) {
-                delete file;
-                file = nullptr;
-                return file;
+            dbg_printf("alloc_NxFile: START (desiredAccess=0x%x)\n", desiredAccess);
+            dbg_printf("alloc_NxFile: nxp=%p, filenodes=%p, filenodes->nx_part=%p\n", nxp, filenodes, filenodes->nx_part);
+
+            // Check if nxp and filenodes->nx_part are the same object
+            if (nxp != filenodes->nx_part) {
+                dbg_printf("alloc_NxFile: WARNING - nxp (%p) != filenodes->nx_part (%p) - POINTER MISMATCH!\n", nxp, filenodes->nx_part);
             }
+
+            NxFile *ffile = f ? f->get_nxfile() : nullptr;
+            dbg_printf("alloc_NxFile: Got ffile=%p\n", ffile);
+
+            // Resolve virtual_fs pointer from multiple possible sources to be robust
+            virtual_fs* vfs = nullptr;
+            if (filenodes && filenodes->parent_vfs) {
+              vfs = filenodes->parent_vfs;
+              dbg_printf("alloc_NxFile: Got vfs=%p (from filenodes->parent_vfs)\n", vfs);
+            }
+            if (!vfs) {
+              auto vfs_from_nxp = nxp->vfs();
+              if (vfs_from_nxp) {
+                vfs = vfs_from_nxp;
+                dbg_printf("alloc_NxFile: Got vfs=%p (from nxp->vfs())\n", vfs);
+              }
+            }
+            if (!vfs && filenodes && filenodes->nx_part) {
+              auto vfs_from_part = filenodes->nx_part->vfs();
+              if (vfs_from_part) {
+                vfs = vfs_from_part;
+                dbg_printf("alloc_NxFile: Got vfs=%p (from filenodes->nx_part->vfs())\n", vfs);
+              }
+            }
+
+            dbg_printf("alloc_NxFile: nxp->is_vfs_mounted()=%d\n", nxp->is_vfs_mounted());
+
+            if (!vfs) {
+              dbg_printf("alloc_NxFile: ERROR - vfs is NULL! This means the filesystem is not mounted via mount_vfs()\n");
+              dbg_printf("alloc_NxFile: Checking if nxp->is_vfs_mounted()...\n");
+              dbg_printf("alloc_NxFile: is_vfs_mounted() returned %d but vfs() is NULL - this is a BUG!\n", nxp->is_vfs_mounted());
+              return (NxFile*)nullptr;
+            }
+
+            NxFileFlag options = vfs->virtualize_nxa ? VirtualizeNXA : SimpleFile;
+            dbg_printf("alloc_NxFile: options=%d\n", options);
+
+            dbg_wprintf(L"alloc_NxFile: Creating NxFile for %ls\n", filename_str.c_str());
+            NxFile *file = new NxFile(nxp, ffile ? ffile->completePath().c_str() : filename_str.c_str(), options);
+            dbg_printf("alloc_NxFile: NxFile created at %p\n", file);
+
+            dbg_printf("alloc_NxFile: Calling file->open(0x%x)\n", desiredAccess);
+            if (!file->open(desiredAccess)) {
+              dbg_printf("alloc_NxFile: open() failed, deleting file and clearing context\n");
+              delete file;
+              file = nullptr;
+              dokanfileinfo->Context = 0;
+              return file;
+            }
+            dbg_printf("alloc_NxFile: open() succeeded\n");
             dokanfileinfo->Context = reinterpret_cast<ULONG64>(file);
+            dbg_printf("alloc_NxFile: DONE, returning %p\n", file);
             return file;
         };
         NxFile* nxFile = nullptr;
         switch (creation_disposition) {
-            case CREATE_ALWAYS: {
-                dbg_wprintf(L"CreateFile: %ls CREATE_ALWAYS\n", filename_str.c_str());
-                /*
-                 * Creates a new file, always.
-                 *
-                 * We handle FILE_SUPERSEDE here as it is converted to TRUNCATE_EXISTING
-                 * by DokanMapKernelToUserCreateFileFlags.
-                 */
+          case CREATE_ALWAYS: {
+            dbg_wprintf(L"CreateFile: %ls CREATE_ALWAYS\n", filename_str.c_str());
+            /*
+             * Creates a new file, always.
+             *
+             * We handle FILE_SUPERSEDE here as it is converted to TRUNCATE_EXISTING
+             * by DokanMapKernelToUserCreateFileFlags.
+             */
 
-                if (!stream_names.second.empty()) {
-                  // The createfile is a alternate stream,
-                  // we need to be sure main stream exist
-                  auto n =
-                      create_main_stream(filenodes, filename_str, stream_names,
-                                         file_attributes_and_flags, security_context);
-                  if (n != STATUS_SUCCESS) return n;
-                }
-                // Alloc new file handle
-                else if (!(nxFile = alloc_NxFile(FA_CREATE_ALWAYS | FA_READ | FA_WRITE)))
-                    return STATUS_OBJECT_PATH_INVALID;
+            // Prevent creating files inside virtualized NXA archives (.nca files)
+            // NXA files appear as directories but are actually files, so reject file creation inside them
+            auto last_slash = filename_str.find_last_of(L"\\");
+            if (last_slash != std::wstring::npos && last_slash > 0) {
+              auto parent_path = filename_str.substr(0, last_slash);
+              // Check if parent ends with .nca extension (Nintendo archive file)
+              if (parent_path.length() >= 4 &&
+                  parent_path.substr(parent_path.length() - 4) == L".nca") {
+                dbg_wprintf(L"CREATE_ALWAYS: Cannot create file inside NXA archive: %ls\n", parent_path.c_str());
+                return STATUS_NOT_A_DIRECTORY;
+              }
+            }
 
-                if (f) return STATUS_OBJECT_NAME_COLLISION;
+            dbg_printf("CREATE_ALWAYS: Checking stream names...\n");
+            if (!stream_names.second.empty()) {
+              // The createfile is a alternate stream,
+              // we need to be sure main stream exist
+              dbg_printf("CREATE_ALWAYS: Is alternate stream, creating main stream...\n");
+              auto n =
+                create_main_stream(filenodes, filename_str, stream_names,
+                         file_attributes_and_flags, security_context);
+              if (n != STATUS_SUCCESS) {
+                dbg_printf("CREATE_ALWAYS: create_main_stream failed with status 0x%x\n", n);
+                return n;
+              }
+              dbg_printf("CREATE_ALWAYS: Main stream created successfully\n");
+            }
+            // Alloc new file handle
+            else {
+              dbg_printf("CREATE_ALWAYS: Not an alternate stream, allocating NxFile...\n");
+              BYTE mode = FA_CREATE_ALWAYS | FA_READ | FA_WRITE;
+              dbg_printf("CREATE_ALWAYS: Calling alloc_NxFile with mode=0x%x (should be 0x%x)\n", mode, (FA_CREATE_ALWAYS | FA_READ | FA_WRITE));
+              nxFile = alloc_NxFile(mode);
+              if (!nxFile) {
+                dbg_printf("CREATE_ALWAYS: alloc_NxFile failed!\n");
+                dokanfileinfo->Context = 0;
+                return STATUS_OBJECT_PATH_INVALID;
+              }
+              dbg_printf("CREATE_ALWAYS: NxFile allocated successfully\n");
+            }
 
-                auto n = filenodes->add(std::make_shared<filenode>(filename_str, false, file_attributes_and_flags, security_context,
-                                                                   nxFile ? new NxFile(nxp, nxFile->completePath().c_str(), nxp->vfs()->virtualize_nxa ? VirtualizeNXA : SimpleFile) : nullptr));
-                if (n != STATUS_SUCCESS) return n;
+            dbg_printf("CREATE_ALWAYS: Checking if file already exists (f=%p)...\n", f.get());
+            if (f) {
+              dbg_printf("CREATE_ALWAYS: File already exists, returning collision\n");
+              dokanfileinfo->Context = 0;
+              return STATUS_OBJECT_NAME_COLLISION;
+            }
 
-              } break;
+            dbg_printf("CREATE_ALWAYS: Creating filenode and adding to cache...\n");
+            auto n = filenodes->add(std::make_shared<filenode>(filename_str, false, file_attributes_and_flags, security_context,
+                                       nxFile));
+            if (n != STATUS_SUCCESS) {
+              dbg_printf("CREATE_ALWAYS: filenodes->add failed with status 0x%x\n", n);
+              dokanfileinfo->Context = 0;
+              return n;
+            }
+            dbg_printf("CREATE_ALWAYS: File created successfully!\n");
+
+            } break;
             case CREATE_NEW: {
-                dbg_wprintf(L"CreateFile: %ls CREATE_ALWAYS\n", filename_str.c_str());
+                dbg_wprintf(L"CreateFile: %ls CREATE_NEW\n", filename_str.c_str());
                 /*
                  * Creates a new file, only if it does not already exist.
                  */
                 if (f) return STATUS_OBJECT_NAME_COLLISION;
+
+                // Prevent creating files inside virtualized NXA archives (.nca files)
+                auto last_slash = filename_str.find_last_of(L"\\");
+                if (last_slash != std::wstring::npos && last_slash > 0) {
+                  auto parent_path = filename_str.substr(0, last_slash);
+                  // Check if parent ends with .nca extension (Nintendo archive file)
+                  if (parent_path.length() >= 4 &&
+                      parent_path.substr(parent_path.length() - 4) == L".nca") {
+                    dbg_wprintf(L"CREATE_NEW: Cannot create file inside NXA archive: %ls\n", parent_path.c_str());
+                    return STATUS_NOT_A_DIRECTORY;
+                  }
+                }
 
                 if (!stream_names.second.empty()) {
                   // The createfile is a alternate stream,
@@ -242,7 +350,7 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_createfile(LPCWSTR filename, PDOKAN_IO
                     return STATUS_OBJECT_PATH_INVALID;
 
                 auto n = filenodes->add(std::make_shared<filenode>(filename_str, false, file_attributes_and_flags, security_context,
-                                                                   nxFile ? new NxFile(nxp, nxFile->completePath().c_str(), nxp->vfs()->virtualize_nxa ? VirtualizeNXA : SimpleFile) : nullptr));
+                                                                   nxFile));
                 if (n != STATUS_SUCCESS) return n;
               } break;
               case OPEN_ALWAYS: {
@@ -251,6 +359,18 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_createfile(LPCWSTR filename, PDOKAN_IO
                  * Opens a file, always.
                  */
 
+                // Prevent creating files inside virtualized NXA archives (.nca files)
+                auto last_slash = filename_str.find_last_of(L"\\");
+                if (last_slash != std::wstring::npos && last_slash > 0) {
+                  auto parent_path = filename_str.substr(0, last_slash);
+                  // Check if parent ends with .nca extension (Nintendo archive file)
+                  if (parent_path.length() >= 4 &&
+                      parent_path.substr(parent_path.length() - 4) == L".nca") {
+                    dbg_wprintf(L"OPEN_ALWAYS: Cannot create file inside NXA archive: %ls\n", parent_path.c_str());
+                    return STATUS_NOT_A_DIRECTORY;
+                  }
+                }
+
                 // Alloc new file handle
                 if (!(nxFile = alloc_NxFile(FA_OPEN_ALWAYS | FA_READ | FA_WRITE)))
                     return STATUS_OBJECT_PATH_INVALID;
@@ -258,7 +378,7 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_createfile(LPCWSTR filename, PDOKAN_IO
                 if (!f) {
                     auto n = filenodes->add(std::make_shared<filenode>(
                       filename_str, false, file_attributes_and_flags,
-                      security_context, nxFile ? new NxFile(nxp, nxFile->completePath().c_str(), nxp->vfs()->virtualize_nxa ? VirtualizeNXA : SimpleFile) : nullptr));
+                      security_context, nxFile));
                     if (n != STATUS_SUCCESS) return n;
                 } else {
                   if (desiredaccess & FILE_EXECUTE) {
@@ -275,9 +395,9 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_createfile(LPCWSTR filename, PDOKAN_IO
                  */
                 if (!f) return STATUS_OBJECT_NAME_NOT_FOUND;
 
-                // Alloc new file handle
-                if (!alloc_NxFile(FA_OPEN_EXISTING | FA_WRITE | FA_READ))
-                    return STATUS_OBJECT_NAME_NOT_FOUND;
+                // For OPEN_EXISTING, don't pre-allocate any handle
+                // Files will be opened on-demand in read/write operations
+                // This matches version 5.0 behavior which worked for physical drives
 
                 if (desiredaccess & FILE_EXECUTE) {
                   f->times.lastaccess = filetimes::get_currenttime();
@@ -370,10 +490,24 @@ static void DOKAN_CALLBACK virtual_fs_cleanup(LPCWSTR filename,
           nxp->f_unlink(filename_str.c_str());
       }
       else if (hasContext) {
-        dbg_printf("Delete on close, remove nx file\n");
+        dbg_printf("Delete on close, remove nx file (with context)\n");
         GET_FILE_INSTANCE->remove();
       }
-      else dbg_printf("Delete on close, NO CONTEXT\n");
+      else {
+        dbg_printf("Delete on close, remove file (no context)\n");
+        // File was opened without context (OPEN_EXISTING case)
+        // Need to delete from FAT32 filesystem directly
+        auto f = filenodes->find(filename_str);
+        if (f) {
+            auto nxFile = f->get_nxfile();
+            if (nxFile) {
+                nxFile->remove();
+            } else {
+                // Fallback: use f_unlink directly
+                nxp->f_unlink(filename_str.c_str());
+            }
+        }
+      }
       filenodes->remove(filename_str);
   }
   if (hasContext) {
@@ -411,11 +545,33 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_readfile(LPCWSTR filename, LPVOID buff
         return STATUS_SUCCESS;
     }
     auto f = filenodes->find(filename_str);
-    if (!f || !dokanfileinfo->Context)
+    if (!f)
         return STATUS_OBJECT_NAME_NOT_FOUND;
 
-    auto nxFile = GET_FILE_INSTANCE;
-    return nxFile->read((u64)offset, (void*)buffer, bufferlength, (u32*)readlength);
+    // If Context exists, use NxFile
+    if (dokanfileinfo->Context) {
+        auto nxFile = GET_FILE_INSTANCE;
+        return nxFile->read((u64)offset, (void*)buffer, bufferlength, (u32*)readlength);
+    }
+
+    // Fallback: Use NxFile from filenode (created during populate)
+    // With single-threaded Dokan (thread_number = 1), this is safe
+    auto nxp = filenodes->nx_part;
+    if (!nxp->is_mounted())
+        return STATUS_OBJECT_NAME_NOT_FOUND;
+
+    auto nxFile_from_node = f->get_nxfile();
+    if (!nxFile_from_node)
+        return STATUS_OBJECT_NAME_NOT_FOUND;
+
+    // Open the file if not already open
+    if (!nxFile_from_node->isOpen()) {
+        if (!nxFile_from_node->open(FA_READ))
+            return STATUS_OBJECT_NAME_NOT_FOUND;
+    }
+
+    // Use the NxFile's read method
+    return nxFile_from_node->read((u64)offset, (void*)buffer, bufferlength, (u32*)readlength);
 }
 
 static NTSTATUS DOKAN_CALLBACK virtual_fs_writefile(LPCWSTR filename, LPCVOID buffer,
@@ -436,8 +592,32 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_writefile(LPCWSTR filename, LPCVOID bu
 
     dbg_wprintf(L"WriteFile: %ls (Ctx: %I64d)\n", filename_str.c_str(), dokanfileinfo->Context);
     auto f = filenodes->find(filename_str);
-    if (!f || !dokanfileinfo->Context)
+    if (!f)
         return STATUS_OBJECT_NAME_NOT_FOUND;
+
+    // If Context is NULL, use NxFile from filenode
+    if (!dokanfileinfo->Context) {
+        auto nxp = filenodes->nx_part;
+        if (!nxp->is_mounted())
+            return STATUS_OBJECT_NAME_NOT_FOUND;
+
+        auto nxFile_from_node = f->get_nxfile();
+        if (!nxFile_from_node)
+            return STATUS_OBJECT_NAME_NOT_FOUND;
+
+        // Open the file if not already open
+        if (!nxFile_from_node->isOpen()) {
+            if (!nxFile_from_node->open(FA_READ | FA_WRITE))
+                return STATUS_OBJECT_NAME_NOT_FOUND;
+        }
+
+        auto res = nxFile_from_node->write((u64)offset, (void*)buffer, number_of_bytes_to_write, (u32*)number_of_bytes_written);
+
+        if (offset + *number_of_bytes_written > f->size)
+            f->set_endoffile(offset + *number_of_bytes_written);
+
+        return res ? STATUS_OBJECT_NAME_NOT_FOUND : STATUS_SUCCESS;
+    }
 
     auto file_size = f->get_filesize();
     auto nxFile = GET_FILE_INSTANCE;
@@ -503,7 +683,16 @@ virtual_fs_getfileInformation(LPCWSTR filename, LPBY_HANDLE_FILE_INFORMATION buf
   dbg_wprintf(L"GetFileInformation: %ls (Ctx %I64d)\n", filename_str.c_str(), dokanfileinfo->Context);
   auto f = filenodes->find(filename_str);
   if (!f) return STATUS_OBJECT_NAME_NOT_FOUND;
-  buffer->dwFileAttributes = f->attributes;
+
+  // For .nca files, ensure they are reported as regular files, not directories
+  // even though NXA archives have directory-like internal structure
+  DWORD attributes = f->attributes;
+  if (filename_str.length() >= 4 && filename_str.substr(filename_str.length() - 4) == L".nca") {
+    attributes &= ~FILE_ATTRIBUTE_DIRECTORY;  // Remove directory flag
+    if (attributes == 0) attributes = FILE_ATTRIBUTE_NORMAL;  // Ensure at least one attribute
+    dbg_wprintf(L"GetFileInformation: Stripping DIRECTORY flag from .nca file: %ls\n", filename_str.c_str());
+  }
+  buffer->dwFileAttributes = attributes;
   virtual_fs_helper::LlongToFileTime(f->times.creation, buffer->ftCreationTime);
   virtual_fs_helper::LlongToFileTime(f->times.lastaccess, buffer->ftLastAccessTime);
   virtual_fs_helper::LlongToFileTime(f->times.lastwrite, buffer->ftLastWriteTime);
@@ -532,9 +721,18 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_findfiles(LPCWSTR filename,
                                                PDOKAN_FILE_INFO dokanfileinfo) {
   auto filenodes = GET_FS_INSTANCE;
   auto filename_str = std::wstring(filename);
+  dbg_wprintf(L"FindFiles: %ls (start)\n", filename_str.c_str());
+
+  // Prevent listing contents of .nca files (they should be treated as files, not directories)
+  if (filename_str.length() >= 4 && filename_str.substr(filename_str.length() - 4) == L".nca") {
+    dbg_wprintf(L"FindFiles: Rejecting directory listing for NXA file: %ls\n", filename_str.c_str());
+    return STATUS_NOT_A_DIRECTORY;
+  }
+
   auto files = filenodes->list_folder(filename_str);
+  dbg_printf("FindFiles: Found %d entries in cache for %ls\n", (int)files.size(), filename_str.c_str());
+
   WIN32_FIND_DATAW findData;
-  //dbg_wprintf(L"FindFiles: %ls\n", filename_str.c_str());
   ZeroMemory(&findData, sizeof(WIN32_FIND_DATAW));
   for (const auto& f : files) {
     if (f->main_stream) continue; // Do not list File Streams
@@ -563,6 +761,7 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_findfiles(LPCWSTR filename,
         */
     fill_finddata(&findData, dokanfileinfo);
   }
+  dbg_wprintf(L"FindFiles: %ls (done, %d files)\n", filename_str.c_str(), files.size());
   return STATUS_SUCCESS;
 }
 
@@ -754,19 +953,38 @@ virtual_fs_unlockfile(LPCWSTR filename, LONGLONG byte_offset, LONGLONG length,
 static NTSTATUS DOKAN_CALLBACK virtual_fs_getdiskfreespace(
     PULONGLONG free_bytes_available, PULONGLONG total_number_of_bytes,
     PULONGLONG total_number_of_free_bytes, PDOKAN_FILE_INFO dokanfileinfo) {
-  //dbg_wprintf(L"GetDiskFreeSpace\n");
+  dbg_wprintf(L"GetDiskFreeSpace called\n");
   auto nxp = GET_FS_INSTANCE->nx_part;
   auto fs = nxp->fs();
   u64 tb = (u64)fs->n_fatent * (u64)fs->csize * (u64)512;
   u64 fb = 0;
-  if (!fs->free_clst || fs->free_clst == 0xFFFFFFFF)
-  {
-      DWORD free_clst;
-      nxp->f_getfree(L"", &free_clst, &fs);
-      tb = (u64)free_clst * (u64)fs->csize * (u64)512;
-  }
-  else fb = (u64)fs->free_clst * (u64)fs->csize * (u64)512;
 
+  dbg_printf("GetDiskFreeSpace: isReadOnly=%d, free_clst=0x%X\n",
+             nxp->parent->nxHandle->isReadOnly(), fs->free_clst);
+
+  // For read-only drives (physical drives), report 0 free bytes
+  if (nxp->parent->nxHandle->isReadOnly())
+  {
+      dbg_printf("GetDiskFreeSpace: Read-only drive, reporting 0 free\n");
+      fb = 0;
+  }
+  // If free_clst is already cached by FatFS, use it
+  else if (fs->free_clst && fs->free_clst != 0xFFFFFFFF)
+  {
+      dbg_printf("GetDiskFreeSpace: Using cached free_clst\n");
+      fb = (u64)fs->free_clst * (u64)fs->csize * (u64)512;
+  }
+  // Otherwise, report total capacity as free space estimate to avoid hanging
+  // This prevents Windows from hanging on "Calculating..." when copying files
+  // The actual free space check will happen when writing fails due to disk full
+  else
+  {
+      dbg_printf("GetDiskFreeSpace: free_clst not cached, reporting estimated free space (90%% of total)\n");
+      // Report 90% of total capacity as free to be safe
+      fb = (u64)(tb * 0.9);
+  }
+
+  dbg_printf("GetDiskFreeSpace: returning total=%llu free=%llu\n", tb, fb);
   *free_bytes_available = (ULONGLONG)fb;
   *total_number_of_bytes = (ULONGLONG)tb;
   *total_number_of_free_bytes = (ULONGLONG)fb;

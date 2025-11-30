@@ -19,8 +19,13 @@
 
 #define NX_BLOCKSIZE 0x200 // 512 b
 #define CLUSTER_SIZE 0x4000 // 16 Kb
-#define DEFAULT_BUFF_SIZE 0x400000 // 4 Mb
+#define DEFAULT_BUFF_SIZE 0x800000 // 8 Mb (increased for better I/O performance)
 #define FAT32_FILESIZE_LIMIT 0x100000000‬ // 4Gb
+
+// Compile-time safety check: ensure buffer size is compatible with cluster operations
+#if (DEFAULT_BUFF_SIZE % CLUSTER_SIZE) != 0
+#error "DEFAULT_BUFF_SIZE must be a multiple of CLUSTER_SIZE for crypto operations"
+#endif
 
 // NxStorage types
 #define INVALID   1000

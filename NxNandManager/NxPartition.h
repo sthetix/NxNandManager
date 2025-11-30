@@ -167,6 +167,8 @@ class NxPartition
         bool is_mounted() { return m_fatfs.fs_type > 0; }
         bool is_vfs_mounted() { return m_is_vfs_mounted; }
         int mount_vfs(bool run = true, wchar_t driveLetter = L'\0', VFSOptions options = NoOption, void(*clb_func_ptr)(NTSTATUS) = nullptr);
+        // Assign virtual fs pointer (used by virtual_fs constructor to register itself)
+        void assign_vfs(class virtual_fs::virtual_fs* vfs) { m_vfs = vfs; }
 
         FRESULT f_open (FIL* fp, const TCHAR* path, BYTE mode);				/* Open or create a file */
         FRESULT f_opendir (DIR* dp, const TCHAR* path);						/* Open a directory */

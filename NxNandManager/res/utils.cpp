@@ -560,7 +560,19 @@ void dbg_printf (const char *format, ...)
 	va_list args;
 	va_start( args, format );
 	vprintf(format, args);
-	va_end( args );    
+	va_end( args );
+
+	// Write to log file
+	static FILE* logfile = nullptr;
+	if (!logfile) {
+		logfile = fopen("nxnandmanager_debug.log", "w");
+	}
+	if (logfile) {
+		va_start( args, format );
+		vfprintf(logfile, format, args);
+		va_end( args );
+		fflush(logfile);
+	}
 
 #if defined(ENABLE_GUI)
     if (isGUI)
@@ -581,6 +593,18 @@ void dbg_wprintf (const wchar_t *format, ...)
 		return;
 
 	va_list args;
+
+	// Write to log file
+	static FILE* logfile = nullptr;
+	if (!logfile) {
+		logfile = fopen("nxnandmanager_debug.log", "a");
+	}
+	if (logfile) {
+		va_start( args, format );
+		vfwprintf(logfile, format, args);
+		va_end( args );
+		fflush(logfile);
+	}
 
 #if defined(ENABLE_GUI)
     if (isGUI)
