@@ -1,4 +1,4 @@
-![Png](https://img.shields.io/badge/latest%20stable%20release-5.1-yellow) 
+![Png](https://img.shields.io/badge/latest%20stable%20release-5.1-yellow)
 ![Png](https://img.shields.io/badge/platform-windows-lightgrey)
 ![GitHub contributors](https://img.shields.io/github/contributors/eliboa/NxNandManager)
 ![GitHub](https://img.shields.io/github/license/eliboa/NxNandManager)
@@ -114,8 +114,9 @@ Arguments | Description
 --info | Display information about input/output (depends on NAND type): <br/>NAND type, partitions, encryption, autoRCM status...<br />...more info when -keyset provided: firmware ver., S/N, device ID, ...
 --list | List compatible physical drives`
 --incognito | Wipe all console unique ids and certificates from CAL0 (a.k.a incognito)<br />Only apply to input type RAWNAND or PRODINFO partition
---enable_autoRCM | Enable auto RCM. -i must point to a valid BOOT0 file/drive 
+--enable_autoRCM | Enable auto RCM. -i must point to a valid BOOT0 file/drive
 --disable_autoRCM | Disable auto RCM. -i must point to a valid BOOT0 file/drive
+--format | Format partition to FAT32. -i must point to a valid NAND/partition<br />Use -part to specify partition (SYSTEM or USER). -keyset is mandatory
 
 Flag | Description
 ------ | -----------
@@ -201,8 +202,16 @@ Encrypt single partition file :
 Decrypt & restore single partition file to physical drive   
 ```NxNandManager.exe -i PRODINFO.dec -o \\.\PhysicalDrive3 -part=PRODINFO -e -keyset keys.dat```
 
-Encrypt & restore full rawnand   
+Encrypt & restore full rawnand
 ```NxNandManager.exe -i rawnand.dec -o \\.\PhysicalDrive3 -e -keyset keys.dat```
+
+### Format partition to FAT32
+
+Format USER partition to FAT32 :
+```NxNandManager.exe -i rawnand.bin -part=USER --format -keyset keys.dat```
+
+Format SYSTEM partition to FAT32 from physical drive :
+```NxNandManager.exe -i \\.\PhysicalDrive3 -part=SYSTEM --format -keyset keys.dat```
 
 ## Build (Windows 10, 8, 7, Vista)
 
@@ -211,7 +220,7 @@ Encrypt & restore full rawnand
 **Dependency :** [OpenSSL](https://www.openssl.org/source/) (You can grab my own pre-compiled binaries for mingw32/64 [here](https://www.eliboa.com/OpenSSL_mingw_build.rar)).
 
 ```
-git clone https://github.com/eliboa/NxNandManager   
+git clone https://github.com/sthetix/NxNandManager  
 cd NxNandManager/NxNandManager
 make
 ```
