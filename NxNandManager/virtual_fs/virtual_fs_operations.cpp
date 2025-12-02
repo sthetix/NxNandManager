@@ -302,9 +302,15 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_createfile(LPCWSTR filename, PDOKAN_IO
 
             dbg_printf("CREATE_ALWAYS: Checking if file already exists (f=%p)...\n", f.get());
             if (f) {
-              dbg_printf("CREATE_ALWAYS: File already exists, returning collision\n");
-              dokanfileinfo->Context = 0;
-              return STATUS_OBJECT_NAME_COLLISION;
+              dbg_printf("CREATE_ALWAYS: File already exists, replacing it\n");
+              // CREATE_ALWAYS should replace existing files
+              // Remove the old file from the filesystem
+              auto nxFile_old = f->get_nxfile();
+              if (nxFile_old) {
+                nxFile_old->remove();
+              }
+              // Remove from cache
+              filenodes->remove(filename_str);
             }
 
             dbg_printf("CREATE_ALWAYS: Creating filenode and adding to cache...\n");
