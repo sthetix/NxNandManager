@@ -1,0 +1,62 @@
+# Build artifacts
+*.o
+*.exe
+*.dll
+*.a
+*.so
+*.dylib
+
+# IDE and editor files
+.vscode/
+.vs/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# Build directories
+build/
+dist/
+bin/
+obj/
+
+# Debug logs
+*_debug.log
+*.log
+
+# Sensitive keys and credentials
+*.keys
+prod.keys
+dev.keys
+
+# OpenSSL library distribution
+# Keep headers (include/) for compilation, ignore binaries and docs
+NxNandManager/lib/openssl/bin/
+NxNandManager/lib/openssl/share/
+NxNandManager/lib/openssl/lib/*.dll.a
+NxNandManager/lib/openssl/lib/*.a
+NxNandManager/lib/openssl/lib/engines-1_1/
+NxNandManager/lib/openssl/ssl/
+
+# Compiled object files
+NxNandManager/*.o
+NxNandManager/**/*.o
+
+# Dependencies that should be downloaded/built locally
+NxNandManager/dokan1.dll
+NxNandManager/NxNandManager.exe
+NxNandManager/libcrypto-1_1-x64.dll
+NxNandManager/libssl-1_1-x64.dll
+
+# Python scripts (unless they're part of the project)
+*.pyc
+__pycache__/
+remove_claude_mentions.py
+
+# Windows specific
+Thumbs.db
+ehthumbs.db
+Desktop.ini
