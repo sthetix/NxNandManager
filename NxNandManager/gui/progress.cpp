@@ -243,14 +243,12 @@ void Progress::setProgressBarStyle(QProgressBar* progressBar, QString color)
 {
     QString st;
     if (nullptr == color || color == "rainbow")
-        st.append(
-        "QProgressBar::chunk {"
-        "background: qlineargradient(x1: 0, y1: 0.5, x2: 1, y2: 0.5, stop: 0 #d3abd7, stop: 0.2 #acabfe, stop: 0.4 #b4d9ab, stop: 0.6 #ffffab, stop: 0.8 #ffdcab, stop: 1 #ffadab);"
-        "} ");
-    else st.append(
+        color = "4CAF50"; // default solid green
+
+    st.append(
         "QProgressBar::chunk {"
         "background-color: #" + color + ";"
-                                        "}");
+        "}");
 
     st.append("QProgressBar {"
               "border: 1px solid grey;"
