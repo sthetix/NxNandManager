@@ -15,7 +15,9 @@
  */
 
 #include "NxStorage.h"
-
+#include <fstream>
+#include <sstream>
+#include <vector>
 
 static MagicOffsets mgkOffArr[] =
 {
@@ -67,8 +69,61 @@ static NxStorageType NxTypesArr[] =
     { UNKNOWN  , "UNKNOWN" }
 };
 
-// Title ID 0100000000000809 (SystemVersion)
-static NxSystemTitles systemTitlesArr[] = {
+static std::vector<NxSystemTitles> systemTitlesArr;
+static std::vector<NxSystemTitles> exFatTitlesArr;
+static bool ncaDbLoaded = false;
+
+// Load NCA database from external file
+static void loadNcaDatabase()
+{
+    if (ncaDbLoaded)
+        return;
+
+    ncaDbLoaded = true;
+    systemTitlesArr.clear();
+    exFatTitlesArr.clear();
+
+    std::ifstream file("nca.txt");
+    if (!file.is_open())
+        return;
+
+    std::string line;
+    while (std::getline(file, line))
+    {
+        // Trim whitespace
+        line.erase(0, line.find_first_not_of(" \t\r\n"));
+        line.erase(line.find_last_not_of(" \t\r\n") + 1);
+
+        // Skip empty lines and comments
+        if (line.empty() || line[0] == '#')
+            continue;
+
+        // Parse [NCA] entries
+        if (line.find("[NCA]") == 0)
+        {
+            std::istringstream iss(line.substr(5));
+            std::string fw_version, nca_filename, title_id;
+
+            if (iss >> fw_version >> nca_filename >> title_id)
+            {
+                NxSystemTitles entry;
+                strncpy(const_cast<char*>(entry.fw_version), fw_version.c_str(), sizeof(entry.fw_version) - 1);
+                strncpy(const_cast<char*>(entry.nca_filename), nca_filename.c_str(), sizeof(entry.nca_filename) - 1);
+
+                // SystemVersion title
+                if (title_id == "0100000000000809")
+                    systemTitlesArr.push_back(entry);
+                // ExFat title
+                else if (title_id == "010000000000081B")
+                    exFatTitlesArr.push_back(entry);
+            }
+        }
+    }
+    file.close();
+}
+
+// Legacy hardcoded arrays as fallback (kept for backward compatibility if nca.txt is not found)
+static NxSystemTitles systemTitlesArrFallback[] = {
     { "21.0.1", "e7273dd5b560d0ba282fc64206fecb56.nca"},
     { "21.0.0", "4b0130c8b9d2174a6574f6247655acc0.nca"},
     { "20.5.0", "23ce01f1fc55e55a783162d456e5ca58.nca"},
@@ -150,8 +205,8 @@ static NxSystemTitles systemTitlesArr[] = {
     { "1.0.0", "a1b287e07f8455e8192f13d0e45a2aaf.nca"}
 };
 
-// Title ID 010000000000081B (BootImagePackageExFat)
-static NxSystemTitles exFatTitlesArr[] = {
+// Title ID 010000000000081B (BootImagePackageExFat) - Fallback
+static NxSystemTitles exFatTitlesArrFallback[] = {
     { "21.0.1", "5d920340732acee21eda71743688d71a.nca"},
     { "21.0.0", "5d920340732acee21eda71743688d71a.nca"},
     { "21.0.0", "5d920340732acee21eda71743688d71a.nca"},
@@ -913,15 +968,26 @@ void NxStorage::setStorageInfo(int partition)
         if (!cur_part->is_mounted())
             cur_part->mount_fs();
 
-        for (int i(0); i < array_countof(systemTitlesArr); i++)
-        {
-            auto file = NxFile(cur_part, wstring(L"/Contents/registered/").append(wstring(convertCharArrayToLPCWSTR(systemTitlesArr[i].nca_filename))));
-            if (file.exists()) {
-                dbg_printf("Found NCA for fw %s\n", systemTitlesArr[i].fw_version);
-                memcpy(fw_version, systemTitlesArr[i].fw_version, strlen(systemTitlesArr[i].fw_version));
-                setFirmwareVersion(&firmware_version, systemTitlesArr[i].fw_version);
+        // Load external NCA database
+        loadNcaDatabase();
 
-                if ( NxFile(cur_part, wstring(L"/Contents/registered/").append(wstring(convertCharArrayToLPCWSTR(exFatTitlesArr[i].nca_filename)))).exists())
+        // Use external database if loaded, otherwise fallback to hardcoded arrays
+        const auto& systemTitles = systemTitlesArr.empty() ?
+            std::vector<NxSystemTitles>(systemTitlesArrFallback, systemTitlesArrFallback + array_countof(systemTitlesArrFallback)) :
+            systemTitlesArr;
+        const auto& exFatTitles = exFatTitlesArr.empty() ?
+            std::vector<NxSystemTitles>(exFatTitlesArrFallback, exFatTitlesArrFallback + array_countof(exFatTitlesArrFallback)) :
+            exFatTitlesArr;
+
+        for (size_t i = 0; i < systemTitles.size(); i++)
+        {
+            auto file = NxFile(cur_part, wstring(L"/Contents/registered/").append(wstring(convertCharArrayToLPCWSTR(systemTitles[i].nca_filename))));
+            if (file.exists()) {
+                dbg_printf("Found NCA for fw %s\n", systemTitles[i].fw_version);
+                memcpy(fw_version, systemTitles[i].fw_version, strlen(systemTitles[i].fw_version));
+                setFirmwareVersion(&firmware_version, systemTitles[i].fw_version);
+
+                if (i < exFatTitles.size() && NxFile(cur_part, wstring(L"/Contents/registered/").append(wstring(convertCharArrayToLPCWSTR(exFatTitles[i].nca_filename)))).exists())
                     exFat_driver = true;
                 break;
             }
