@@ -81,8 +81,8 @@ struct NxStorageType
 
 typedef struct NxSystemTitles NxSystemTitles;
 struct NxSystemTitles {
-    const char fw_version[48];
-    const char nca_filename[40];
+    char fw_version[48];
+    char nca_filename[40];
 };
 
 typedef struct NxKeys NxKeys;

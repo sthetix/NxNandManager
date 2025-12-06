@@ -5,11 +5,14 @@
 #include "types.h"
 #include <string>
 
+#define PROGRESS_UPDATE_INTERVAL_MS 100
+
 typedef struct ProgressInfo ProgressInfo;
 struct ProgressInfo {
     int mode;
     bool show = true;
     timepoint_t begin_time;
+    timepoint_t last_update_time;
     int elapsed_seconds = 0;
     char storage_name[256];
     u64 bytesCount = 0;
