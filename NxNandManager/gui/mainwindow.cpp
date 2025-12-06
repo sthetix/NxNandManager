@@ -125,9 +125,7 @@ MainWindow::MainWindow(QWidget *parent) :
                               "https://eliboa.com/switch/all_titles.php?export=json");
 
     // Create nca filename database
-    m_ncaDB = new NxNcaDB("nca.json",
-                          "https://eliboa.com/switch/nca.php?export=json",
-                          0x54600); // exp. delay: 4 days
+    m_ncaDB = new NxNcaDB("nca.txt");
 
     if(input_path.count())
     {

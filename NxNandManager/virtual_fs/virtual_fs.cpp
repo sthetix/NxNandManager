@@ -42,12 +42,8 @@ virtual_fs::virtual_fs(NxPartition* part)
     fs_filenodes->nx_part = partition;
     fs_filenodes->parent_vfs = this;  // WORKAROUND: Store pointer to this virtual_fs object
     dbg_printf("virtual_fs::virtual_fs() constructor: fs_filenodes=%p, fs_filenodes->nx_part=%p\n", fs_filenodes.get(), fs_filenodes->nx_part);
-
-    // Register this virtual_fs instance with the NxPartition so partition->vfs()
-    // returns a valid pointer even if the VFS was created on the stack.
-    dbg_printf("virtual_fs::virtual_fs() constructor: About to call partition->assign_vfs(this=%p)\n", this);
-    partition->assign_vfs(this);
-    dbg_printf("virtual_fs::virtual_fs() constructor: After assign_vfs, part->vfs()=%p (should be %p)\n", part->vfs(), this);
+    dbg_printf("virtual_fs::virtual_fs() constructor: fs_filenodes->parent_vfs=%p (should be %p)\n", fs_filenodes->parent_vfs, this);
+    dbg_printf("virtual_fs::virtual_fs() constructor: Checking part->vfs()=%p, part->m_vfs should be updated to %p\n", part->vfs(), this);
     callback_func = nullptr;
 }
 

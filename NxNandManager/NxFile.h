@@ -157,7 +157,6 @@ public:
     ~NxFile();
 
 private:
-    bool delete_dir_recursive(const std::wstring &path);
     NxPartition * m_nxp;
     wstring m_filename;
     wstring m_filepath;

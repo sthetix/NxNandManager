@@ -231,47 +231,48 @@ NxUserDB::~NxUserDB()
         delete u.avatar_img;
 }
 
-void NxNcaDB::populate_titles()
+NxNcaDB::NxNcaDB(const QString &txt_file_) : txt_file(txt_file_)
+{
+    load_from_file();
+}
+
+void NxNcaDB::load_from_file()
 {
     std::lock_guard<std::mutex> lock(_m_titles_mutex);
-    QFile& file = *resource->get();
-    if (!file.exists() || !file.open(QIODevice::ReadOnly))
-        return;
-
-    QJsonObject json = QJsonDocument::fromJson(file.readAll()).object();
-    file.close();
-    if (!json.contains("ncas"))
-        return;
-
-    bool ok;
     m_titles.clear();
-    for (auto title_obj : json["ncas"].toArray())
-    {
-        auto title = title_obj.toObject();
-        NxTitle nx_title;
-        if (title.contains("title_id"))
-        {
-            nx_title.id = title["title_id"].toString();
-            nx_title.u64_id = nx_title.id.toULongLong(&ok, 16);
-            if (!ok)
-                continue;
-        }
-        if (title.contains("title_label"))
-            nx_title.name = title["title_label"].toString();
-        if (title.contains("type"))
-            nx_title.type = title["type"].toString();
-        if (title.contains("nca_filename"))
-            nx_title.filename.append(title["nca_filename"].toString());
-        if (title.contains("type"))
-            nx_title.content_type = title["type"].toString();
-        if (title.contains("firmware"))
-            nx_title.firmware = title["firmware"].toString();
 
-        if (nx_title.u64_id)
-            m_titles.append(nx_title);
+    QFile file(txt_file);
+    if (!file.exists() || !file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return;
+
+    QTextStream in(&file);
+    while (!in.atEnd())
+    {
+        QString line = in.readLine().trimmed();
+
+        // Skip empty lines and comments
+        if (line.isEmpty() || line.startsWith("#"))
+            continue;
+
+        // Parse NCA entry format: [NCA] <version> <nca_filename> <title_id>
+        if (line.startsWith("[NCA]"))
+        {
+            QStringList parts = line.mid(5).trimmed().split(QRegExp("\\s+"), QString::SkipEmptyParts);
+            if (parts.size() >= 3)
+            {
+                NxTitle nx_title;
+                nx_title.firmware = parts[0];         // version (e.g., "21.0.1")
+                nx_title.filename = parts[1];         // NCA filename
+                nx_title.id = parts[2];               // title_id (e.g., "0100000000000809")
+
+                bool ok;
+                nx_title.u64_id = nx_title.id.toULongLong(&ok, 16);
+                if (ok && nx_title.u64_id)
+                    m_titles.append(nx_title);
+            }
+        }
     }
-    if (json.contains("timestamp") && json["timestamp"].toInt())
-        checkUpdate(json["timestamp"].toInt());    
+    file.close();
 }
 
 NxTitle* NxNcaDB::findTitleByFileName(QString filename)

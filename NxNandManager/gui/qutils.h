@@ -93,20 +93,21 @@ public slots:
 };
 
 
-class NxNcaDB : NxTitleDB
+class NxNcaDB : public QObject
 {
     Q_OBJECT
 public:
-    NxNcaDB(const QString &json_file_, const QString &update_url_ = nullptr, int expiration_delay = 86400) :
-        NxTitleDB(json_file_, update_url_, expiration_delay) {}
+    NxNcaDB(const QString &txt_file_ = "nca.txt");
+    ~NxNcaDB() {}
     NxTitle* findTitleByFileName(QString filename);
     QVector<NxTitle*> findTitlesById(QString id);
-
-public slots:
-    void populate_titles() override;
-
-public :
     bool is_Empty() { return m_titles.isEmpty(); }
+
+private:
+    std::mutex _m_titles_mutex;
+    QVector<NxTitle> m_titles;
+    QString txt_file;
+    void load_from_file();
 };
 
 typedef struct { u32 _u32; u16 _u16[6]; } uid;

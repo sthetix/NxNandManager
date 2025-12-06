@@ -198,34 +198,18 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_createfile(LPCWSTR filename, PDOKAN_IO
             NxFile *ffile = f ? f->get_nxfile() : nullptr;
             dbg_printf("alloc_NxFile: Got ffile=%p\n", ffile);
 
-            // Resolve virtual_fs pointer from multiple possible sources to be robust
-            virtual_fs* vfs = nullptr;
-            if (filenodes && filenodes->parent_vfs) {
-              vfs = filenodes->parent_vfs;
-              dbg_printf("alloc_NxFile: Got vfs=%p (from filenodes->parent_vfs)\n", vfs);
-            }
-            if (!vfs) {
-              auto vfs_from_nxp = nxp->vfs();
-              if (vfs_from_nxp) {
-                vfs = vfs_from_nxp;
-                dbg_printf("alloc_NxFile: Got vfs=%p (from nxp->vfs())\n", vfs);
-              }
-            }
-            if (!vfs && filenodes && filenodes->nx_part) {
-              auto vfs_from_part = filenodes->nx_part->vfs();
-              if (vfs_from_part) {
-                vfs = vfs_from_part;
-                dbg_printf("alloc_NxFile: Got vfs=%p (from filenodes->nx_part->vfs())\n", vfs);
-              }
-            }
+            // WORKAROUND: Use filenodes->parent_vfs instead of nxp->vfs() to avoid build issues
+            auto vfs = filenodes->parent_vfs;
+            dbg_printf("alloc_NxFile: Got vfs=%p (from filenodes->parent_vfs WORKAROUND)\n", vfs);
 
+            // For debugging, also check nxp->vfs()
+            auto vfs_from_nxp = nxp->vfs();
+            dbg_printf("alloc_NxFile: vfs from nxp->vfs()=%p (for comparison)\n", vfs_from_nxp);
             dbg_printf("alloc_NxFile: nxp->is_vfs_mounted()=%d\n", nxp->is_vfs_mounted());
 
             if (!vfs) {
-              dbg_printf("alloc_NxFile: ERROR - vfs is NULL! This means the filesystem is not mounted via mount_vfs()\n");
-              dbg_printf("alloc_NxFile: Checking if nxp->is_vfs_mounted()...\n");
-              dbg_printf("alloc_NxFile: is_vfs_mounted() returned %d but vfs() is NULL - this is a BUG!\n", nxp->is_vfs_mounted());
-              return (NxFile*)nullptr;
+                dbg_printf("alloc_NxFile: ERROR - vfs is NULL even from filenodes->parent_vfs!\n");
+                return (NxFile*)nullptr;
             }
 
             NxFileFlag options = vfs->virtualize_nxa ? VirtualizeNXA : SimpleFile;
@@ -237,11 +221,10 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_createfile(LPCWSTR filename, PDOKAN_IO
 
             dbg_printf("alloc_NxFile: Calling file->open(0x%x)\n", desiredAccess);
             if (!file->open(desiredAccess)) {
-              dbg_printf("alloc_NxFile: open() failed, deleting file and clearing context\n");
-              delete file;
-              file = nullptr;
-              dokanfileinfo->Context = 0;
-              return file;
+                dbg_printf("alloc_NxFile: open() failed, deleting file\n");
+                delete file;
+                file = nullptr;
+                return file;
             }
             dbg_printf("alloc_NxFile: open() succeeded\n");
             dokanfileinfo->Context = reinterpret_cast<ULONG64>(file);
@@ -250,80 +233,58 @@ static NTSTATUS DOKAN_CALLBACK virtual_fs_createfile(LPCWSTR filename, PDOKAN_IO
         };
         NxFile* nxFile = nullptr;
         switch (creation_disposition) {
-          case CREATE_ALWAYS: {
-            dbg_wprintf(L"CreateFile: %ls CREATE_ALWAYS\n", filename_str.c_str());
-            /*
-             * Creates a new file, always.
-             *
-             * We handle FILE_SUPERSEDE here as it is converted to TRUNCATE_EXISTING
-             * by DokanMapKernelToUserCreateFileFlags.
-             */
+            case CREATE_ALWAYS: {
+                dbg_wprintf(L"CreateFile: %ls CREATE_ALWAYS\n", filename_str.c_str());
+                /*
+                 * Creates a new file, always.
+                 *
+                 * We handle FILE_SUPERSEDE here as it is converted to TRUNCATE_EXISTING
+                 * by DokanMapKernelToUserCreateFileFlags.
+                 */
 
-            // Prevent creating files inside virtualized NXA archives (.nca files)
-            // NXA files appear as directories but are actually files, so reject file creation inside them
-            auto last_slash = filename_str.find_last_of(L"\\");
-            if (last_slash != std::wstring::npos && last_slash > 0) {
-              auto parent_path = filename_str.substr(0, last_slash);
-              // Check if parent ends with .nca extension (Nintendo archive file)
-              if (parent_path.length() >= 4 &&
-                  parent_path.substr(parent_path.length() - 4) == L".nca") {
-                dbg_wprintf(L"CREATE_ALWAYS: Cannot create file inside NXA archive: %ls\n", parent_path.c_str());
-                return STATUS_NOT_A_DIRECTORY;
-              }
-            }
+                dbg_printf("CREATE_ALWAYS: Checking stream names...\n");
+                if (!stream_names.second.empty()) {
+                  // The createfile is a alternate stream,
+                  // we need to be sure main stream exist
+                  dbg_printf("CREATE_ALWAYS: Is alternate stream, creating main stream...\n");
+                  auto n =
+                      create_main_stream(filenodes, filename_str, stream_names,
+                                         file_attributes_and_flags, security_context);
+                  if (n != STATUS_SUCCESS) {
+                      dbg_printf("CREATE_ALWAYS: create_main_stream failed with status 0x%x\n", n);
+                      return n;
+                  }
+                  dbg_printf("CREATE_ALWAYS: Main stream created successfully\n");
+                }
+                // Alloc new file handle
+                else {
+                    dbg_printf("CREATE_ALWAYS: Not an alternate stream, allocating NxFile...\n");
+                    BYTE mode = FA_CREATE_ALWAYS | FA_READ | FA_WRITE;
+                    dbg_printf("CREATE_ALWAYS: Calling alloc_NxFile with mode=0x%x (should be 0x%x)\n", mode, (FA_CREATE_ALWAYS | FA_READ | FA_WRITE));
+                    nxFile = alloc_NxFile(mode);
+                    if (!nxFile) {
+                        dbg_printf("CREATE_ALWAYS: alloc_NxFile failed!\n");
+                        return STATUS_OBJECT_PATH_INVALID;
+                    }
+                    dbg_printf("CREATE_ALWAYS: NxFile allocated successfully\n");
+                }
 
-            dbg_printf("CREATE_ALWAYS: Checking stream names...\n");
-            if (!stream_names.second.empty()) {
-              // The createfile is a alternate stream,
-              // we need to be sure main stream exist
-              dbg_printf("CREATE_ALWAYS: Is alternate stream, creating main stream...\n");
-              auto n =
-                create_main_stream(filenodes, filename_str, stream_names,
-                         file_attributes_and_flags, security_context);
-              if (n != STATUS_SUCCESS) {
-                dbg_printf("CREATE_ALWAYS: create_main_stream failed with status 0x%x\n", n);
-                return n;
-              }
-              dbg_printf("CREATE_ALWAYS: Main stream created successfully\n");
-            }
-            // Alloc new file handle
-            else {
-              dbg_printf("CREATE_ALWAYS: Not an alternate stream, allocating NxFile...\n");
-              BYTE mode = FA_CREATE_ALWAYS | FA_READ | FA_WRITE;
-              dbg_printf("CREATE_ALWAYS: Calling alloc_NxFile with mode=0x%x (should be 0x%x)\n", mode, (FA_CREATE_ALWAYS | FA_READ | FA_WRITE));
-              nxFile = alloc_NxFile(mode);
-              if (!nxFile) {
-                dbg_printf("CREATE_ALWAYS: alloc_NxFile failed!\n");
-                dokanfileinfo->Context = 0;
-                return STATUS_OBJECT_PATH_INVALID;
-              }
-              dbg_printf("CREATE_ALWAYS: NxFile allocated successfully\n");
-            }
+                dbg_printf("CREATE_ALWAYS: Checking if file already exists (f=%p)...\n", f.get());
+                if (f) {
+                    dbg_printf("CREATE_ALWAYS: File already exists, returning collision\n");
+                    return STATUS_OBJECT_NAME_COLLISION;
+                }
 
-            dbg_printf("CREATE_ALWAYS: Checking if file already exists (f=%p)...\n", f.get());
-            if (f) {
-              dbg_printf("CREATE_ALWAYS: File already exists, replacing it\n");
-              // CREATE_ALWAYS should replace existing files
-              // Remove the old file from the filesystem
-              auto nxFile_old = f->get_nxfile();
-              if (nxFile_old) {
-                nxFile_old->remove();
-              }
-              // Remove from cache
-              filenodes->remove(filename_str);
-            }
+                dbg_printf("CREATE_ALWAYS: Creating filenode and adding to cache...\n");
+                auto n = filenodes->add(std::make_shared<filenode>(filename_str, false, file_attributes_and_flags, security_context,
+                                                                   nxFile ? new NxFile(nxp, nxFile->completePath().c_str(), nxp->vfs()->virtualize_nxa ? VirtualizeNXA : SimpleFile) : nullptr));
+                if (n != STATUS_SUCCESS) {
+                    dbg_printf("CREATE_ALWAYS: filenodes->add failed with status 0x%x\n", n);
+                    return n;
+                }
+                dbg_printf("CREATE_ALWAYS: File created successfully!\n");
 
-            dbg_printf("CREATE_ALWAYS: Creating filenode and adding to cache...\n");
-            auto n = filenodes->add(std::make_shared<filenode>(filename_str, false, file_attributes_and_flags, security_context,
-                                       nxFile));
-            if (n != STATUS_SUCCESS) {
-              dbg_printf("CREATE_ALWAYS: filenodes->add failed with status 0x%x\n", n);
-              dokanfileinfo->Context = 0;
-              return n;
-            }
-            dbg_printf("CREATE_ALWAYS: File created successfully!\n");
-
-            } break;
+              } break;
             case CREATE_NEW: {
                 dbg_wprintf(L"CreateFile: %ls CREATE_NEW\n", filename_str.c_str());
                 /*

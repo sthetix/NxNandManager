@@ -415,21 +415,8 @@ bool NxFile::open(BYTE mode)
         mode |= FA_WRITE;
 
     // NX ARCHIVE CREATION if filename matches *.nca & path starts with /Content
-    // Handle both creation (isCreateNew) and overwrite (truncate_existing) cases
-    bool should_create_nxa = (isCreateNew || truncate_existing) && (m_options & VirtualizeNXA) &&
-                             endsWith(m_filename, wstring(L".nca")) && startsWith(m_filepath, wstring(L"/Contents"));
-
-    if (should_create_nxa)
+    if (isCreateNew && (m_options & VirtualizeNXA) && endsWith(m_filename, wstring(L".nca")) && startsWith(m_filepath, wstring(L"/Contents")))
     {
-        // If path already exists, remove it recursively first (handles overwrite case)
-        FILINFO fno;
-        if (m_nxp->f_stat(path.c_str(), &fno) == FR_OK) {
-            // Path exists - attempt recursive delete
-            dbg_wprintf(L"NxFile::open() - Deleting existing NCA directory: %ls\n", path.c_str());
-            if (!delete_dir_recursive(path))
-                return exit(FR_DENIED);
-        }
-
         // Create new dir for NCA
         if ((res = m_nxp->f_mkdir(path.c_str())))
             return exit(res);
@@ -527,52 +514,6 @@ bool NxFile::seek(u64 offset, bool no_lock)
         return exit(resize(absoluteOffset()));
 
     return exit(res);
-}
-
-// Recursive delete helper used to remove existing NXA directories before creating a new one
-bool NxFile::delete_dir_recursive(const std::wstring &path)
-{
-    DIR dp;
-    FILINFO fno;
-
-    if (m_nxp->f_opendir(&dp, path.c_str()))
-        return false;
-
-    while (m_nxp->f_readdir(&dp, &fno) == FR_OK)
-    {
-        if (fno.fname[0] == '\0')
-            break;
-
-        // Skip special entries
-        if (!wcscmp(fno.fname, L".") || !wcscmp(fno.fname, L".."))
-            continue;
-
-        std::wstring child = path + L"/" + std::wstring(fno.fname);
-
-        // If entry is directory or NX archive, recurse
-        if (fno.fattrib == FILE_ATTRIBUTE_DIRECTORY || fno.fattrib == FILE_ATTRIBUTE_NX_ARCHIVE)
-        {
-            if (!delete_dir_recursive(child)) {
-                f_closedir(&dp);
-                return false;
-            }
-        }
-        else
-        {
-            if (m_nxp->f_unlink(child.c_str())) {
-                f_closedir(&dp);
-                return false;
-            }
-        }
-    }
-
-    f_closedir(&dp);
-
-    // Remove the directory itself
-    if (m_nxp->f_unlink(path.c_str()))
-        return false;
-
-    return true;
 }
 
 int NxFile::truncate()
