@@ -48,8 +48,8 @@ clean :
 $(EXEC_NAME): $(OBJS)
 	$(CXX) -o $@ $^ $(LIBS) 
 
-$(RCOBJ) : %.rc.o : %.rc
-	windres $^ -o $@
+$(RCOBJ) : %.rc.o : %.rc gui/images/logo.ico
+	windres $< -o $@
 
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
