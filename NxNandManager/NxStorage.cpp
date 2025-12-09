@@ -89,14 +89,20 @@ static void loadNcaDatabase()
     std::string exeDir = (pos != std::string::npos) ? exePath.substr(0, pos + 1) : "";
     std::string ncaPath = exeDir + "nca.txt";
 
+    dbg_printf("loadNcaDatabase() - trying to load from: %s\n", ncaPath.c_str());
     std::ifstream file(ncaPath);
     if (!file.is_open())
     {
+        dbg_printf("loadNcaDatabase() - failed, trying current directory: nca.txt\n");
         // Fallback: try current directory as well
         file.open("nca.txt");
         if (!file.is_open())
+        {
+            dbg_printf("loadNcaDatabase() - nca.txt not found!\n");
             return;
+        }
     }
+    dbg_printf("loadNcaDatabase() - nca.txt loaded successfully, parsing entries...\n");
 
     std::string line;
     while (std::getline(file, line))
@@ -131,6 +137,8 @@ static void loadNcaDatabase()
         }
     }
     file.close();
+    dbg_printf("loadNcaDatabase() - loaded %d SystemVersion entries and %d ExFat entries\n",
+               (int)systemTitlesArr.size(), (int)exFatTitlesArr.size());
 }
 
 static u8 tx_sector[112] = {
