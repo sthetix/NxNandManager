@@ -83,9 +83,20 @@ static void loadNcaDatabase()
     systemTitlesArr.clear();
     exFatTitlesArr.clear();
 
-    std::ifstream file("nca.txt");
+    // Build full path to nca.txt in the executable directory
+    std::string exePath = ExePath();
+    std::size_t pos = exePath.find_last_of("/\\");
+    std::string exeDir = (pos != std::string::npos) ? exePath.substr(0, pos + 1) : "";
+    std::string ncaPath = exeDir + "nca.txt";
+
+    std::ifstream file(ncaPath);
     if (!file.is_open())
-        return;
+    {
+        // Fallback: try current directory as well
+        file.open("nca.txt");
+        if (!file.is_open())
+            return;
+    }
 
     std::string line;
     while (std::getline(file, line))
