@@ -46,7 +46,6 @@ jobs:
         if: steps.check_changes.outputs.has_changes == 'true'
         shell: pwsh
         run: |
-          # Get first [NCA] line which contains the latest firmware
           $line = Select-String -Path nca.txt -Pattern "\[NCA\]" | Select-Object -First 1
           if ($line) {
             $version = ($line.Line -split ' ')[1]
@@ -60,19 +59,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
         run: |
-          # Get the GUI zip asset URL from the 5.51 release
           $assetUrl = gh release view 5.51 --json assets --jq '.assets[] | select(.name | contains("GUI") and endswith(".zip")) | .url'
           if (-not $assetUrl) {
             Write-Error "No GUI zip asset found in release 5.51"
             exit 1
           }
           Write-Host "Found GUI asset URL: $assetUrl"
-
-          # Download the asset using the browser_download_url
           $downloadUrl = gh api $assetUrl --jq '.browser_download_url'
           Write-Host "Download URL: $downloadUrl"
-
-          # Download with proper headers for redirects
           [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
           Invoke-WebRequest -Uri $downloadUrl -OutFile "NxNandManager_v5.51_x64_GUI.zip" -Headers @{ "Accept" = "application/octet-stream" }
           Write-Host "Downloaded GUI zip"
@@ -82,17 +76,10 @@ jobs:
         if: steps.check_changes.outputs.has_changes == 'true'
         shell: pwsh
         run: |
-          $fwVersion = "${{ steps.get_latest_fw.outputs.version }}"
-
-          # Extract the downloaded zip
           if (Test-Path "temp_zip") { Remove-Item -Recurse -Force "temp_zip" }
           Expand-Archive -Path "NxNandManager_v5.51_x64_GUI.zip" -DestinationPath "temp_zip" -Force
-
-          # Replace nca.txt inside the extracted zip
           Copy-Item -Path "nca.txt" -Destination "temp_zip/" -Force -ErrorAction SilentlyContinue
           if (-not (Test-Path "temp_zip/nca.txt")) {
-            # nca.txt might be in a subdirectory or have different casing
-            Write-Host "nca.txt not at root, searching..."
             $ncaFiles = Get-ChildItem -Path "temp_zip" -Recurse -Filter "nca.txt" -File
             if ($ncaFiles) {
               Copy-Item -Path "nca.txt" -Destination $ncaFiles[0].FullName -Force
@@ -104,12 +91,10 @@ jobs:
           } else {
             Write-Host "Replaced nca.txt at root"
           }
-
-          # Repackage the zip
           if (Test-Path "NxNandManager_v5.51_x64_GUI.zip") { Remove-Item -Force "NxNandManager_v5.51_x64_GUI.zip" }
           Compress-Archive -Path "temp_zip/*" -DestinationPath "NxNandManager_v5.51_x64_GUI.zip" -Force
           Remove-Item -Recurse -Force "temp_zip"
-          Write-Host "Created updated zip: $(Get-Item NxNandManager_v5.51_x64_GUI.zip | ForEach-Object { $_.Length }) bytes"
+          Write-Host "Created updated zip"
 
       - name: Commit nca.txt to repo
         if: steps.check_changes.outputs.has_changes == 'true'
@@ -127,12 +112,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: pwsh
         run: |
-          # Find the GUI zip asset ID to delete
           $assetId = gh release view 5.51 --json assets --jq '.assets[] | select(.name | contains("GUI") and endswith(".zip")) | .id'
           if ($assetId) {
             Write-Host "Deleting old asset ID: $assetId"
-            gh api -X DELETE "repos/$((gh api /user --jq .login))/NxNandManager/releases/assets/$assetId"
-            # Fallback: use full repo path
             $repo = "$env:GITHUB_REPOSITORY"
             gh api -X DELETE "repos/$repo/releases/assets/$assetId"
           } else {
@@ -156,6 +138,7 @@ jobs:
         run: |
           $fwVersion = "${{ steps.get_latest_fw.outputs.version }}"
           $date = (Get-Date -Format "yyyy-MM-dd HH:mm UTC")
+          $count = [int]((Get-Content nca.txt | Select-String '\[NCA\]').Count)
 
           $notes = @"
 # NxNandManager v5.51
@@ -203,12 +186,9 @@ Example entry:
 
 - Database sourced from [FuseNCA](https://github.com/sthetix/FuseNCA)
 - Auto-generated on: $date
-- Total firmware versions supported: $([int]((Get-Content nca.txt | Select-String '\[NCA\]').Count))
+- Total firmware versions supported: $count
 "@
 
-          # Write notes to file
           $notes | Out-File -FilePath "release_notes.md" -Encoding UTF8
-
-          # Update the release
           gh release edit 5.51 --notes-file "release_notes.md"
           Write-Host "Updated release description to support firmware $fwVersion"
