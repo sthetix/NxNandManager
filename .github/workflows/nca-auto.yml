@@ -1,8 +1,7 @@
-# Auto-updates nca.txt from FuseNCA when new firmware is released
 name: Update NCA Database
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # Allow manual trigger
   schedule:
     - cron: "0 0 * * *"
 
