@@ -1,3 +1,4 @@
+# Auto-updates nca.txt from FuseNCA when new firmware is released
 name: Update NCA Database
 
 on:
