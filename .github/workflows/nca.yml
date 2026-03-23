@@ -1,0 +1,162 @@
+name: Update NCA Database
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  update_nca:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get current nca.txt checksum
+        id: checksum
+        run: |
+          hash=$(sha256sum nca.txt | cut -d' ' -f1)
+          echo "original=$hash" >> $GITHUB_OUTPUT
+
+      - name: Update NCA database from FuseNCA
+        run: |
+          python3 scripts/update_nca_db.py
+
+      - name: Check for changes
+        id: check_changes
+        run: |
+          new_hash=$(sha256sum nca.txt | cut -d' ' -f1)
+          if [ "$new_hash" != "${{ steps.checksum.outputs.original }}" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "NCA database has changed!"
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "No changes in NCA database"
+          fi
+
+      - name: Get latest firmware version
+        id: get_latest_fw
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          version=$(grep '\[NCA\]' nca.txt | head -1 | awk '{print $2}')
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "Latest firmware: $version"
+
+      - name: Download current GUI zip from 5.51 release
+        if: steps.check_changes.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download 5.51 --pattern '*GUI*.zip' --dir . --clobber
+
+      - name: Update zip with new nca.txt
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          FW_VERSION="${{ steps.get_latest_fw.outputs.version }}"
+          ZIP_FILE=$(ls NxNandManager_*_GUI.zip 2>/dev/null | head -1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: No GUI zip found"
+            exit 1
+          fi
+
+          echo "Using zip: $ZIP_FILE"
+
+          rm -rf zip_tmp
+          unzip -q "$ZIP_FILE" -d zip_tmp
+
+          cp nca.txt zip_tmp/
+
+          rm -f "$ZIP_FILE"
+          cd zip_tmp && zip -rq ../"$ZIP_FILE" . && cd ..
+          rm -rf zip_tmp
+
+          echo "Updated zip created: $(ls -lh "$ZIP_FILE")"
+
+      - name: Commit nca.txt to repo
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add nca.txt
+          git commit -m "chore: update NCA database to firmware ${{ steps.get_latest_fw.outputs.version }}"
+          git push
+
+      - name: Upload updated GUI zip to release
+        if: steps.check_changes.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ZIP_FILE=$(ls NxNandManager_*_GUI.zip | head -1)
+
+          # Delete old GUI zip asset
+          for asset_url in $(gh api repos/${{ github.repository }}/releases/tags/5.51 --jq '.assets[] | select(.name | contains("GUI") and endswith(".zip")) | .url'); do
+            gh api -X DELETE "$asset_url"
+          done
+
+          # Upload new zip
+          gh release upload 5.51 "$ZIP_FILE"
+          rm -f "$ZIP_FILE"
+
+      - name: Update release description
+        if: steps.check_changes.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FW_VERSION="${{ steps.get_latest_fw.outputs.version }}"
+          DATE=$(date -u +"%Y-%m-%d %H:%M UTC")
+          COUNT=$(grep -c '\[NCA\]' nca.txt || echo 0)
+
+          cat > release_notes.md << EOF
+# NxNandManager v5.51
+
+## What's New
+
+Version 5.51 introduces external NCA database support, eliminating the need to recompile the application when new Nintendo Switch firmware versions are released. Currently support up to firmware $FW_VERSION
+
+## Major Changes
+
+- **External NCA Database**: Firmware version detection now uses an external \`nca.txt\` file instead of hardcoded arrays
+- **No Recompilation Required**: Simply edit \`nca.txt\` to add new firmware versions - no need to rebuild the application
+- **Reduced Binary Size**: Removed 170+ lines of hardcoded NCA database entries
+
+## How to Update for New Firmware
+
+When a new Switch firmware is released:
+
+1. Open \`nca.txt\` in a text editor
+2. Add the new firmware entry in the format: \`[NCA] <version> <filename> <title_id>\`
+3. Save the file
+4. Done - no recompilation needed
+
+Example entry:
+[NCA] $FW_VERSION <sha256hash>.nca 0100000000000809
+[NCA] $FW_VERSION <sha256hash>.nca 010000000000081B
+
+## UI Improvements
+
+- Progress bar now displays solid green instead of rainbow gradient
+- Updated application icon
+
+## Important Notes
+
+- **nca.txt is required**: The application will not detect firmware versions without this file
+- All other functionality remains unchanged from v5.50
+- This version will receive updates only if the original author returns to enhance the project
+
+## Technical Details
+
+- Title ID \`0100000000000809\`: SystemVersion (firmware detection)
+- Title ID \`010000000000081B\`: BootImagePackageExFat (exFAT driver detection)
+
+## Database Update
+
+- Database sourced from [FuseNCA](https://github.com/sthetix/FuseNCA)
+- Auto-generated on: $DATE
+- Total firmware versions supported: $COUNT
+EOF
+
+          gh release edit 5.51 --notes-file release_notes.md
