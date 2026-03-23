@@ -1,0 +1,147 @@
+name: build
+
+on:
+  pull_request:
+    branches: [ "master" ]
+  workflow_dispatch:
+  schedule:
+    # Run daily at midnight UTC to check for new firmware
+    - cron: '0 0 * * *'
+
+jobs:
+  check_and_build:
+    runs-on: windows-latest
+    outputs:
+      has_changes: ${{ steps.check_changes.outputs.has_changes }}
+      latest_firmware: ${{ steps.get_latest_fw.outputs.version }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Get current nca.txt checksum
+        id: checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -Path nca.txt -Algorithm SHA256).Hash
+          echo "original=$hash" >> $env:GITHUB_OUTPUT
+
+      - name: Update NCA database from FuseNCA
+        shell: pwsh
+        run: |
+          python scripts/update_nca_db.py
+
+      - name: Check for changes
+        id: check_changes
+        shell: pwsh
+        run: |
+          $newHash = (Get-FileHash -Path nca.txt -Algorithm SHA256).Hash
+          $oldHash = "${{ steps.checksum.outputs.original }}"
+          if ($newHash -ne $oldHash) {
+            echo "has_changes=true" >> $env:GITHUB_OUTPUT
+            echo "NCA database has changed!"
+          } else {
+            echo "has_changes=false" >> $env:GITHUB_OUTPUT
+            echo "No changes in NCA database"
+          }
+
+      - name: Get latest firmware version
+        id: get_latest_fw
+        shell: pwsh
+        run: |
+          # Get first [NCA] line which contains the latest firmware
+          $line = Select-String -Path nca.txt -Pattern "\[NCA\]" | Select-Object -First 1
+          if ($line) {
+            $version = ($line.Line -split ' ')[1]
+            echo "version=$version" >> $env:GITHUB_OUTPUT
+            echo "Latest firmware: $version"
+          }
+
+      - name: Commit changes to repo
+        if: steps.check_changes.outputs.has_changes == 'true' && github.event_name == 'schedule'
+        shell: pwsh
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add nca.txt
+          git commit -m "chore: update NCA database to firmware ${{ steps.get_latest_fw.outputs.version }}" --no-verify
+          git push
+
+  build:
+    needs: check_and_build
+    if: needs.check_and_build.outputs.has_changes == 'true' || github.event_name != 'schedule'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      # Use the updated nca.txt from check job
+      - name: Download updated nca.txt
+        if: github.event_name == 'schedule'
+        shell: pwsh
+        run: |
+          git fetch origin
+          git checkout origin/master -- nca.txt
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: >-
+            base-devel
+            mingw-w64-x86_64-toolchain
+            mingw64/mingw-w64-x86_64-qt5-static
+
+      - name: Build
+        shell: msys2 {0}
+        run: |
+          ln -s $(pwd) ~/NxNandManager
+          cd ~/NxNandManager/NxNandManager/gui
+          /mingw64/qt5-static/bin/qmake.exe NxNandManager.pro 'CONFIG += STATIC ARCH64'
+          make -j"$(nproc)"
+          mkdir -p $GITHUB_WORKSPACE/bin
+          cp release/NxNandManager.exe $GITHUB_WORKSPACE/bin/
+          cp ../virtual_fs/dokan/x64/dokan1.dll $GITHUB_WORKSPACE/bin/
+          cp ../../nca.txt $GITHUB_WORKSPACE/bin/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NxNandManager
+          path: bin/*
+
+  create_release:
+    needs: [check_and_build, build]
+    if: needs.check_and_build.outputs.has_changes == 'true' && github.event_name == 'schedule'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: NxNandManager
+          path: bin
+
+      - name: Create release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $fwVersion = "${{ needs.check_and_build.outputs.latest_firmware }}"
+          $tagName = "fw-$fwVersion"
+          $releaseName = "NxNandManager with Firmware $fwVersion"
+
+          # Create zip
+          Compress-Archive -Path bin/* -DestinationPath "NxNandManager_${fwVersion}_GUI.zip"
+
+          # Check if tag exists, if not create release
+          $tagExists = gh release view $tagName 2>$null
+          if (-not $tagExists) {
+            gh release create $tagName `
+              --title "$releaseName" `
+              --notes "NCA database updated to support firmware $fwVersion`n`nAutomated release from workflow update." `
+              --notes-file -
+            echo "Created release $tagName"
+          } else {
+            echo "Release $tagName already exists, skipping"
+          }
+
+          # Upload asset
+          gh release upload $tagName "NxNandManager_${fwVersion}_GUI.zip" --clobber
