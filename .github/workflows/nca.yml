@@ -4,9 +4,6 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '0 0 * * *'
-  push:
-    branches:
-      - master
 
 jobs:
   update-nca:
@@ -33,10 +30,8 @@ jobs:
           new_hash=$(sha256sum nca.txt | cut -d' ' -f1)
           if [ "$new_hash" != "${{ steps.checksum.outputs.original }}" ]; then
             echo "has_changes=true" >> $GITHUB_OUTPUT
-            echo "NCA database has changed!"
           else
             echo "has_changes=false" >> $GITHUB_OUTPUT
-            echo "No changes in NCA database"
           fi
 
       - name: Get latest firmware version
@@ -45,7 +40,6 @@ jobs:
         run: |
           version=$(grep '\[NCA\]' nca.txt | head -1 | awk '{print $2}')
           echo "version=$version" >> $GITHUB_OUTPUT
-          echo "Latest firmware: $version"
 
       - name: Download and update GUI zip
         if: steps.check_changes.outputs.has_changes == 'true'
@@ -53,17 +47,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release download 5.51 --pattern '*GUI*.zip' --dir . --clobber
-
           ZIP_FILE=$(ls NxNandManager_*_GUI.zip | head -1)
-          echo "Using zip: $ZIP_FILE"
-
           rm -rf zip_tmp
           unzip -q "$ZIP_FILE" -d zip_tmp
           cp nca.txt zip_tmp/
           rm -f "$ZIP_FILE"
           cd zip_tmp && zip -rq ../"$ZIP_FILE" . && cd ..
           rm -rf zip_tmp
-          echo "Updated zip created"
 
       - name: Update release
         if: steps.check_changes.outputs.has_changes == 'true'
@@ -100,7 +90,6 @@ When a new Switch firmware is released, simply update `nca.txt` with the new fir
 
 - **nca.txt is required**: The application will not detect firmware versions without this file
 - All other functionality remains unchanged from v5.50
-- This version will receive updates only if the original author returns to enhance the project
 
 ## Database Update
 
