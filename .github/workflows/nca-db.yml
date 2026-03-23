@@ -1,7 +1,7 @@
 name: Update NCA Database
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
   schedule:
     - cron: "0 0 * * *"
 
