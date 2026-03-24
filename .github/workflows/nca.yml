@@ -40,3 +40,17 @@ jobs:
         run: |
           version=$(grep '\[NCA\]' nca.txt | head -1 | awk '{print $2}')
           echo "version=$version" >> $GITHUB_OUTPUT
+
+      - name: Download and update GUI zip
+        if: steps.check_changes.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download 5.51 --pattern '*GUI*.zip' --dir . --clobber
+          ZIP_FILE=$(ls NxNandManager_*_GUI.zip | head -1)
+          rm -rf zip_tmp
+          unzip -q "$ZIP_FILE" -d zip_tmp
+          cp nca.txt zip_tmp/
+          rm -f "$ZIP_FILE"
+          cd zip_tmp && zip -rq ../"$ZIP_FILE" . && cd ..
+          rm -rf zip_tmp
