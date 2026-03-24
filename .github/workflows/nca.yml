@@ -64,43 +64,24 @@ jobs:
           DATE=$(date -u +"%Y-%m-%d %H:%M UTC")
           COUNT=$(grep -c '\[NCA\]' nca.txt || echo 0)
 
-          cat > release_notes.md << 'RELEASENOTES'
-# NxNandManager v5.51
-
-## What's New
-
-Version 5.51 introduces external NCA database support, eliminating the need to recompile the application when new Nintendo Switch firmware versions are released. Currently support up to firmware FW_PLACEHOLDER
-
-## Major Changes
-
-- **External NCA Database**: Firmware version detection now uses an external `nca.txt` file instead of hardcoded arrays
-- **No Recompilation Required**: Simply edit `nca.txt` to add new firmware versions - no need to rebuild the application
-- **Reduced Binary Size**: Removed 170+ lines of hardcoded NCA database entries
-
-## How to Update for New Firmware
-
-When a new Switch firmware is released, simply update `nca.txt` with the new firmware entries - no recompilation needed.
-
-## UI Improvements
-
-- Progress bar now displays solid green instead of rainbow gradient
-- Updated application icon
-
-## Important Notes
-
-- **nca.txt is required**: The application will not detect firmware versions without this file
-- All other functionality remains unchanged from v5.50
-
-## Database Update
-
-- Database sourced from [FuseNCA](https://github.com/sthetix/FuseNCA)
-- Auto-generated on: DATE_PLACEHOLDER
-- Total firmware versions supported: COUNT_PLACEHOLDER
-RELEASENOTES
-
-          sed -i "s/FW_PLACEHOLDER/$FW_VERSION/g" release_notes.md
-          sed -i "s/DATE_PLACEHOLDER/$DATE/g" release_notes.md
-          sed -i "s/COUNT_PLACEHOLDER/$COUNT/g" release_notes.md
+          {
+            echo "# NxNandManager v5.51"
+            echo ""
+            echo "## What's New"
+            echo ""
+            echo "Version 5.51 introduces external NCA database support. Currently support up to firmware $FW_VERSION"
+            echo ""
+            echo "## Major Changes"
+            echo ""
+            echo "- **External NCA Database**: Uses an external \`nca.txt\` file"
+            echo "- **No Recompilation Required**: Simply edit \`nca.txt\` to add new firmware versions"
+            echo ""
+            echo "## Database Update"
+            echo ""
+            echo "- Database sourced from [FuseNCA](https://github.com/sthetix/FuseNCA)"
+            echo "- Auto-generated on: $DATE"
+            echo "- Total firmware versions supported: $COUNT"
+          } > release_notes.md
 
           ZIP_FILE=$(ls NxNandManager_*_GUI.zip | head -1)
 
