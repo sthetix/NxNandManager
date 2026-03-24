@@ -70,8 +70,12 @@ def convert_to_nca_txt(data):
         exfat_nca = entry.get('exfat_title_nca', '')
 
         if system_nca:
+            if not system_nca.endswith('.nca'):
+                system_nca += '.nca'
             system_entries.append(f"[NCA] {ver} {system_nca} {TITLE_ID_SYSTEM_VERSION}")
         if exfat_nca:
+            if not exfat_nca.endswith('.nca'):
+                exfat_nca += '.nca'
             exfat_entries.append(f"[NCA] {ver} {exfat_nca} {TITLE_ID_EXFAT}")
 
     # Add SystemVersion section
