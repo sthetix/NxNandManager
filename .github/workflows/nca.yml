@@ -33,3 +33,10 @@ jobs:
           else
             echo "has_changes=false" >> $GITHUB_OUTPUT
           fi
+
+      - name: Get latest firmware version
+        id: get_latest_fw
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          version=$(grep '\[NCA\]' nca.txt | head -1 | awk '{print $2}')
+          echo "version=$version" >> $GITHUB_OUTPUT
