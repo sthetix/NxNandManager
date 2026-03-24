@@ -92,3 +92,12 @@ jobs:
           gh release upload 5.51 "$ZIP_FILE"
           gh release edit 5.51 --notes-file release_notes.md
           rm -f "$ZIP_FILE" release_notes.md
+
+      - name: Commit database changes
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add nca.txt
+          git commit -m "chore: update NCA database to firmware ${{ steps.get_latest_fw.outputs.version }}"
+          git push
